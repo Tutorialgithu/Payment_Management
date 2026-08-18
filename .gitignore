@@ -10,12 +10,12 @@ build/
 frontend/dist/
 
 # Environment Variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-backend/.env
+# .env
+# .env.local
+# .env.development.local
+# .env.test.local
+# .env.production.local
+# backend/.env
 
 # Logs
 logs
