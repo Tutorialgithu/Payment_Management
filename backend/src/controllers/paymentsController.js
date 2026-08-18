@@ -255,7 +255,7 @@ const updatePayment = async (req, res, next) => {
         } else {
           emi.paidAmount = 0;
           emi.remainingAmount = emi.amount;
-          emi.status = new Date(emi.dueDate) < new Date() ? 'overdue' : 'pending';
+          emi.status = new Date(emi.dueDate) < new Date() ? 'overdue' : 'upcoming';
         }
         await emi.save();
       }
