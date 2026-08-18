@@ -11,9 +11,15 @@ export default defineConfig({
   },
   server: {
     port: 3000,
+    // proxy: {
+    //   '/api': {
+    //     target: 'http://localhost:5001',
+    //     changeOrigin: true
+    //   }
+    // }
     proxy: {
       '/api': {
-        target: 'http://localhost:5001',
+        target: 'https://payment-management-d0yn.onrender.com',
         changeOrigin: true
       }
     }
