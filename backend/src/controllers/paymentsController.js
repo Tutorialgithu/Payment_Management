@@ -191,9 +191,109 @@ const downloadReceiptPDF = async (req, res, next) => {
   }
 };
 
+// @desc    Update Payment Record (e.g. edit amount, date, method, notes)
+// @route   PUT /api/payments/:id
+// @access  Private
+const updatePayment = async (req, res, next) => {
+  try {
+    const { amount, paymentDate, paymentMethod, notes } = req.body;
+    const payment = await Payment.findById(req.params.id);
+
+    if (!payment) {
+      return res.status(404).json({ success: false, message: 'Payment record not found' });
+    }
+
+    const account = await Account.findById(payment.accountId);
+    if (!account) {
+      return res.status(404).json({ success: false, message: 'Associated loan account not found' });
+    }
+
+    const oldAmount = Number(payment.amount) || 0;
+    const newAmount = amount !== undefined ? Number(amount) : oldAmount;
+
+    if (isNaN(newAmount) || newAmount < 0) {
+      return res.status(400).json({ success: false, message: 'Payment amount must be non-negative' });
+    }
+
+    // Difference in payment amount
+    const diff = newAmount - oldAmount;
+
+    // Recalculate Account metrics
+    const updatedTotalReceived = Math.max(0, Math.round((account.totalReceived + diff) * 100) / 100);
+    const updatedOutstanding = Math.max(0, Math.round((account.expectedReturn - updatedTotalReceived) * 100) / 100);
+
+    account.totalReceived = updatedTotalReceived;
+    account.outstanding = updatedOutstanding;
+
+    if (account.outstanding <= 0) {
+      account.outstanding = 0;
+      account.status = 'completed';
+    } else if (account.totalReceived > 0) {
+      account.status = 'partial';
+    } else {
+      account.status = 'active';
+    }
+
+    await account.save();
+
+    // If EMI account, recalculate EMI paid/remaining amounts
+    if (account.repaymentType === 'emi') {
+      const emis = await EMI.find({ accountId: account._id }).sort({ emiNumber: 1 });
+      let remainingPaymentPool = updatedTotalReceived;
+
+      for (let emi of emis) {
+        if (remainingPaymentPool >= emi.amount) {
+          emi.paidAmount = emi.amount;
+          emi.remainingAmount = 0;
+          emi.status = 'paid';
+          remainingPaymentPool -= emi.amount;
+        } else if (remainingPaymentPool > 0) {
+          emi.paidAmount = remainingPaymentPool;
+          emi.remainingAmount = Math.round((emi.amount - remainingPaymentPool) * 100) / 100;
+          emi.status = 'partial';
+          remainingPaymentPool = 0;
+        } else {
+          emi.paidAmount = 0;
+          emi.remainingAmount = emi.amount;
+          emi.status = new Date(emi.dueDate) < new Date() ? 'overdue' : 'pending';
+        }
+        await emi.save();
+      }
+    }
+
+    // Update payment fields
+    payment.amount = newAmount;
+    if (paymentDate) payment.paymentDate = paymentDate;
+    if (paymentMethod) payment.paymentMethod = paymentMethod;
+    if (notes !== undefined) payment.notes = notes;
+
+    await payment.save();
+
+    await logAudit({
+      adminId: req.admin._id,
+      action: 'PAYMENT_UPDATED',
+      entityType: 'Payment',
+      entityId: payment._id,
+      description: `Updated payment ${payment.receiptNumber} amount from ₹${oldAmount} to ₹${newAmount}`,
+      req
+    });
+
+    res.json({
+      success: true,
+      message: 'Payment updated successfully',
+      payment,
+      account
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getPayments,
   getPaymentById,
   createPayment,
+  updatePayment,
   downloadReceiptPDF
 };
+

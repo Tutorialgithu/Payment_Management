@@ -4,6 +4,7 @@ const {
   getPayments,
   getPaymentById,
   createPayment,
+  updatePayment,
   downloadReceiptPDF
 } = require('../controllers/paymentsController');
 const { protect } = require('../middleware/auth');
@@ -11,7 +12,8 @@ const { protect } = require('../middleware/auth');
 router.use(protect);
 
 router.route('/').get(getPayments).post(createPayment);
-router.get('/:id', getPaymentById);
+router.route('/:id').get(getPaymentById).put(updatePayment);
 router.get('/:id/pdf', downloadReceiptPDF);
 
 module.exports = router;
+

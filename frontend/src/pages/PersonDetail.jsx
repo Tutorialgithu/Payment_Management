@@ -13,7 +13,10 @@ import {
   Wallet,
   Calendar,
   Bell,
-  Clock
+  Clock,
+  Edit2,
+  Check,
+  X
 } from 'lucide-react';
 import Badge from '../components/common/Badge';
 import api from '../services/api';
@@ -27,6 +30,35 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
   const [personData, setPersonData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
+
+  const [editingPaymentId, setEditingPaymentId] = useState(null);
+  const [editAmount, setEditAmount] = useState('');
+  const [updatingPayment, setUpdatingPayment] = useState(false);
+  const [editError, setEditError] = useState('');
+
+  const handleUpdatePayment = async (paymentId) => {
+    if (editAmount === '' || isNaN(editAmount) || Number(editAmount) < 0) {
+      setEditError('Enter a valid non-negative amount');
+      return;
+    }
+    setUpdatingPayment(true);
+    setEditError('');
+    try {
+      const res = await api.put(`/payments/${paymentId}`, { amount: Number(editAmount) });
+      if (res.success) {
+        setEditingPaymentId(null);
+        setEditAmount('');
+        await fetchPersonProfile();
+      } else {
+        setEditError(res.message || 'Failed to update payment');
+      }
+    } catch (err) {
+      console.error('Error updating payment:', err);
+      setEditError(err.message || 'Failed to update payment');
+    } finally {
+      setUpdatingPayment(false);
+    }
+  };
 
   const fetchPersonProfile = async () => {
     setLoading(true);
@@ -265,6 +297,10 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                             </span>
                           </div>
 
+                          {editError && editingPaymentId && (
+                            <p className="text-[11px] text-rose-400 mb-2 font-medium">{editError}</p>
+                          )}
+
                           <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/40">
                             {accountPayments.length === 0 ? (
                               <p className="text-xs text-slate-500 text-center py-4 italic">No payments received for this loan account yet.</p>
@@ -276,6 +312,7 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                                     <th className="p-3">Received Date</th>
                                     <th className="p-3">Payment Method</th>
                                     <th className="p-3 text-right">Received Amount</th>
+                                    <th className="p-3 text-center">Action</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-800/50">
@@ -291,7 +328,59 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                                         {p.paymentMethod || 'cash'} {p.transactionId ? `(${p.transactionId})` : ''}
                                       </td>
                                       <td className="p-2 text-right font-extrabold text-emerald-400 text-sm">
-                                        +{symbol}{p.amount?.toLocaleString()}
+                                        {editingPaymentId === p._id ? (
+                                          <div className="flex items-center justify-end gap-1">
+                                            <span className="text-slate-400 text-xs">{symbol}</span>
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              step="any"
+                                              value={editAmount}
+                                              onChange={(e) => setEditAmount(e.target.value)}
+                                              className="w-24 bg-slate-950 border border-blue-500 rounded px-2 py-1 text-white text-xs font-bold focus:outline-none"
+                                              autoFocus
+                                            />
+                                          </div>
+                                        ) : (
+                                          `+${symbol}${p.amount?.toLocaleString()}`
+                                        )}
+                                      </td>
+                                      <td className="p-2 text-center">
+                                        {editingPaymentId === p._id ? (
+                                          <div className="flex items-center justify-center gap-1">
+                                            <button
+                                              disabled={updatingPayment}
+                                              onClick={() => handleUpdatePayment(p._id)}
+                                              className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50"
+                                              title="Save Amount"
+                                            >
+                                              <Check className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                              disabled={updatingPayment}
+                                              onClick={() => {
+                                                setEditingPaymentId(null);
+                                                setEditError('');
+                                              }}
+                                              className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                                              title="Cancel"
+                                            >
+                                              <X className="w-3.5 h-3.5" />
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <button
+                                            onClick={() => {
+                                              setEditingPaymentId(p._id);
+                                              setEditAmount(p.amount);
+                                              setEditError('');
+                                            }}
+                                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-blue-600/20 text-slate-400 hover:text-blue-400 transition"
+                                            title="Edit Received Amount"
+                                          >
+                                            <Edit2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        )}
                                       </td>
                                     </tr>
                                   ))}
