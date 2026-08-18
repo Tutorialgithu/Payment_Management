@@ -165,7 +165,7 @@ const App = () => {
   return (
     <AuthProvider>
       <Routes>
-        <Route path="/login" element={<Login />} />
+        <Route path="/" element={<Login />} />
         <Route path="/*" element={<ProtectedLayout />} />
       </Routes>
     </AuthProvider>
