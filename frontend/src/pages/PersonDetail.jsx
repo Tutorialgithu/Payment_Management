@@ -16,7 +16,8 @@ import {
   Clock,
   Edit2,
   Check,
-  X
+  X,
+  Loader2
 } from 'lucide-react';
 import Badge from '../components/common/Badge';
 import api from '../services/api';
@@ -36,32 +37,8 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
   const [updatingPayment, setUpdatingPayment] = useState(false);
   const [editError, setEditError] = useState('');
 
-  const handleUpdatePayment = async (paymentId) => {
-    if (editAmount === '' || isNaN(editAmount) || Number(editAmount) < 0) {
-      setEditError('Enter a valid non-negative amount');
-      return;
-    }
-    setUpdatingPayment(true);
-    setEditError('');
-    try {
-      const res = await api.put(`/payments/${paymentId}`, { amount: Number(editAmount) });
-      if (res.success) {
-        setEditingPaymentId(null);
-        setEditAmount('');
-        await fetchPersonProfile();
-      } else {
-        setEditError(res.message || 'Failed to update payment');
-      }
-    } catch (err) {
-      console.error('Error updating payment:', err);
-      setEditError(err.message || 'Failed to update payment');
-    } finally {
-      setUpdatingPayment(false);
-    }
-  };
-
-  const fetchPersonProfile = async () => {
-    setLoading(true);
+  const fetchPersonProfile = async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       const res = await api.get(`/people/${id}`);
       if (res.success) {
@@ -70,7 +47,50 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
     } catch (err) {
       console.error('Error fetching person profile:', err);
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
+    }
+  };
+
+  const handleUpdatePayment = async (paymentId) => {
+    const newAmountNum = Number(editAmount);
+    if (editAmount === '' || isNaN(newAmountNum) || newAmountNum < 0) {
+      setEditError('Enter a valid non-negative amount');
+      return;
+    }
+
+    setUpdatingPayment(true);
+    setEditError('');
+
+    // Optimistic Update locally in state for instant UI update without page reload/loading screen
+    setPersonData((prev) => {
+      if (!prev) return prev;
+      const updatedPayments = (prev.payments || []).map((p) =>
+        p._id === paymentId ? { ...p, amount: newAmountNum } : p
+      );
+      return {
+        ...prev,
+        payments: updatedPayments
+      };
+    });
+
+    setEditingPaymentId(null);
+
+    try {
+      const res = await api.put(`/payments/${paymentId}`, { amount: newAmountNum });
+      if (res.success) {
+        setEditAmount('');
+        // Silent background sync without triggering full page loading screen
+        await fetchPersonProfile(false);
+      } else {
+        setEditError(res.message || 'Failed to update payment');
+        await fetchPersonProfile(false);
+      }
+    } catch (err) {
+      console.error('Error updating payment:', err);
+      setEditError(err.message || 'Failed to update payment');
+      await fetchPersonProfile(false);
+    } finally {
+      setUpdatingPayment(false);
     }
   };
 
@@ -166,37 +186,46 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
       </div>
 
       {/* Financial Summary Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-          <span className="text-[10px] uppercase font-bold text-slate-400">Total Accounts</span>
-          <p className="text-xl font-extrabold text-white mt-1">{summary.totalAccounts}</p>
-        </div>
+      {(() => {
+        const overallPaymentsSum = payments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+        const displayTotalReceived = payments.length > 0 ? overallPaymentsSum : (Number(summary.totalReceived) || 0);
+        const displayExpectedReturn = Number(summary.expectedReturn) || 0;
+        const displayOutstanding = Math.max(0, displayExpectedReturn - displayTotalReceived);
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-          <span className="text-[10px] uppercase font-bold text-slate-400">Total Given</span>
-          <p className="text-xl font-extrabold text-blue-400 mt-1">{symbol}{summary.totalGiven?.toLocaleString()}</p>
-        </div>
+        return (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+              <span className="text-[10px] uppercase font-bold text-slate-400">Total Accounts</span>
+              <p className="text-xl font-extrabold text-white mt-1">{summary.totalAccounts}</p>
+            </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-          <span className="text-[10px] uppercase font-bold text-slate-400">Expected Return</span>
-          <p className="text-xl font-extrabold text-purple-400 mt-1">{symbol}{summary.expectedReturn?.toLocaleString()}</p>
-        </div>
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+              <span className="text-[10px] uppercase font-bold text-slate-400">Total Given</span>
+              <p className="text-xl font-extrabold text-blue-400 mt-1">{symbol}{summary.totalGiven?.toLocaleString()}</p>
+            </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-          <span className="text-[10px] uppercase font-bold text-slate-400">Total Received</span>
-          <p className="text-xl font-extrabold text-emerald-400 mt-1">{symbol}{summary.totalReceived?.toLocaleString()}</p>
-        </div>
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+              <span className="text-[10px] uppercase font-bold text-slate-400">Expected Return</span>
+              <p className="text-xl font-extrabold text-purple-400 mt-1">{symbol}{displayExpectedReturn.toLocaleString()}</p>
+            </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-          <span className="text-[10px] uppercase font-bold text-slate-400">Outstanding</span>
-          <p className="text-xl font-extrabold text-amber-400 mt-1">{symbol}{summary.outstanding?.toLocaleString()}</p>
-        </div>
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+              <span className="text-[10px] uppercase font-bold text-slate-400">Total Received</span>
+              <p className="text-xl font-extrabold text-emerald-400 mt-1">{symbol}{displayTotalReceived.toLocaleString()}</p>
+            </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
-          <span className="text-[10px] uppercase font-bold text-slate-400">Overdue</span>
-          <p className="text-xl font-extrabold text-rose-400 mt-1">{symbol}{summary.overdue?.toLocaleString()}</p>
-        </div>
-      </div>
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+              <span className="text-[10px] uppercase font-bold text-slate-400">Outstanding</span>
+              <p className="text-xl font-extrabold text-amber-400 mt-1">{symbol}{displayOutstanding.toLocaleString()}</p>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4">
+              <span className="text-[10px] uppercase font-bold text-slate-400">Overdue</span>
+              <p className="text-xl font-extrabold text-rose-400 mt-1">{symbol}{summary.overdue?.toLocaleString()}</p>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Tabs Bar */}
       <div className="flex border-b border-slate-800 gap-2 overflow-x-auto">
@@ -225,15 +254,33 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                 <span className="text-xs text-slate-400 font-medium">Total Loans: {accounts.length}</span>
               </div>
 
+              {updatingPayment && (
+                <div className="flex items-center gap-2 text-xs font-semibold text-blue-400 bg-blue-500/10 border border-blue-500/20 px-3.5 py-2 rounded-xl animate-pulse">
+                  <Loader2 className="w-4 h-4 animate-spin text-blue-400 shrink-0" />
+                  <span>Updating received amount in backend... Please wait.</span>
+                </div>
+              )}
+
               {accounts.length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-6">No loan accounts found for this borrower.</p>
               ) : (
                 <div className="space-y-6">
                   {accounts.map((acc, idx) => {
                     const accountPayments = payments.filter((p) => {
-                      const pAccId = typeof p.accountId === 'object' ? p.accountId?._id : p.accountId;
-                      return String(pAccId) === String(acc._id);
+                      if (!p.accountId) return false;
+                      const pAccId = typeof p.accountId === 'object' ? (p.accountId._id || p.accountId) : p.accountId;
+                      const matchId = pAccId && String(pAccId) === String(acc._id);
+                      const matchAccNum = p.accountId?.accountNumber && acc.accountNumber && (p.accountId.accountNumber === acc.accountNumber);
+                      return matchId || matchAccNum;
                     });
+
+                    // Direct sum from actual payments array
+                    const accountPaymentsSum = accountPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+                    const totalReceivedVal = accountPayments.length > 0 ? accountPaymentsSum : (Number(acc.totalReceived) || 0);
+
+                    const amountGivenVal = Number(acc.amountGiven) || 0;
+                    const expectedReturnVal = Number(acc.expectedReturn) || 0;
+                    const outstandingVal = Math.max(0, expectedReturnVal - totalReceivedVal);
 
                     return (
                       <div key={acc._id} className="bg-slate-950/60 border border-slate-800 rounded-2xl p-3 md:p-5 space-y-4">
@@ -260,19 +307,19 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 md:gap-2.5">
                           <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-1 md:p-3">
                             <span className="text-[10px] uppercase font-bold text-slate-400">Given Amount</span>
-                            <p className="text-xs font-extrabold text-white mt-0.5">{symbol}{acc.amountGiven?.toLocaleString()}</p>
+                            <p className="text-xs font-extrabold text-white mt-0.5">{symbol}{amountGivenVal.toLocaleString()}</p>
                           </div>
                           <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2 md:p-3">
                             <span className="text-[10px] uppercase font-bold text-slate-400">Expected Return</span>
-                            <p className="text-xs font-extrabold text-purple-400 mt-0.5">{symbol}{acc.expectedReturn?.toLocaleString()}</p>
+                            <p className="text-xs font-extrabold text-purple-400 mt-0.5">{symbol}{expectedReturnVal.toLocaleString()}</p>
                           </div>
-                          <div className="bg-slate-900/80 border border-slate-800 rounded-xl  p-2 md:p-3">
+                          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2 md:p-3">
                             <span className="text-[10px] uppercase font-bold text-slate-400">Total Received</span>
-                            <p className="text-xs font-extrabold text-emerald-400 mt-0.5">{symbol}{acc.totalReceived?.toLocaleString()}</p>
+                            <p className="text-xs font-extrabold text-emerald-400 mt-0.5">{symbol}{totalReceivedVal.toLocaleString()}</p>
                           </div>
-                          <div className="bg-slate-900/80 border border-slate-800 rounded-xl  p-2 md:p-3">
+                          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2 md:p-3">
                             <span className="text-[10px] uppercase font-bold text-slate-400">Remaining</span>
-                            <p className="text-xs font-extrabold text-rose-400 mt-0.5">{symbol}{acc.outstanding?.toLocaleString()}</p>
+                            <p className="text-xs font-extrabold text-rose-400 mt-0.5">{symbol}{outstandingVal.toLocaleString()}</p>
                           </div>
                           <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2 md:p-3">
                             <span className="text-[10px] uppercase font-bold text-slate-400">Given Date</span>
@@ -293,7 +340,7 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                           <div className="flex justify-between items-center mb-2">
                             <h3 className="text-xs font-bold text-slate-300">History</h3>
                             <span className="text-[11px] font-semibold text-emerald-400">
-                              Total Received: {symbol}{acc.totalReceived?.toLocaleString()}
+                              Total Received: {symbol}{totalReceivedVal.toLocaleString()}
                             </span>
                           </div>
 
@@ -351,10 +398,14 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                                             <button
                                               disabled={updatingPayment}
                                               onClick={() => handleUpdatePayment(p._id)}
-                                              className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50"
+                                              className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50 flex items-center justify-center"
                                               title="Save Amount"
                                             >
-                                              <Check className="w-3.5 h-3.5" />
+                                              {updatingPayment ? (
+                                                <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                                              ) : (
+                                                <Check className="w-3.5 h-3.5" />
+                                              )}
                                             </button>
                                             <button
                                               disabled={updatingPayment}

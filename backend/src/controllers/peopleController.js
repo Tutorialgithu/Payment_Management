@@ -97,22 +97,39 @@ const getPersonById = async (req, res, next) => {
     // Accounts
     const accounts = await Account.find({ personId: person._id, isSoftDeleted: false }).sort({ createdAt: -1 });
 
-    // Aggregated metrics
+    // Auto-sync and aggregate metrics for each account
     let totalGiven = 0;
     let expectedReturn = 0;
     let totalReceived = 0;
     let outstanding = 0;
     let overdue = 0;
 
-    accounts.forEach((acc) => {
+    for (let acc of accounts) {
+      const accPayments = await Payment.find({ accountId: acc._id });
+      const actualReceived = Math.round(accPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) * 100) / 100;
+      const actualOutstanding = Math.max(0, Math.round((acc.expectedReturn - actualReceived) * 100) / 100);
+
+      if (acc.totalReceived !== actualReceived || acc.outstanding !== actualOutstanding) {
+        acc.totalReceived = actualReceived;
+        acc.outstanding = actualOutstanding;
+        if (acc.outstanding <= 0) {
+          acc.status = 'completed';
+        } else if (acc.totalReceived > 0) {
+          acc.status = 'partial';
+        } else {
+          acc.status = 'active';
+        }
+        await acc.save();
+      }
+
       totalGiven += Number(acc.amountGiven) || 0;
       expectedReturn += Number(acc.expectedReturn) || 0;
-      totalReceived += Number(acc.totalReceived) || 0;
-      outstanding += Number(acc.outstanding) || 0;
+      totalReceived += actualReceived;
+      outstanding += actualOutstanding;
       if (acc.status === 'overdue') {
-        overdue += Number(acc.outstanding) || 0;
+        overdue += actualOutstanding;
       }
-    });
+    }
 
     // Payments
     const payments = await Payment.find({ personId: person._id }).populate('accountId', 'accountNumber purpose').sort({ paymentDate: -1 });

@@ -215,15 +215,20 @@ const updatePayment = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Payment amount must be non-negative' });
     }
 
-    // Difference in payment amount
-    const diff = newAmount - oldAmount;
+    // Update payment fields first
+    payment.amount = newAmount;
+    if (paymentDate) payment.paymentDate = paymentDate;
+    if (paymentMethod) payment.paymentMethod = paymentMethod;
+    if (notes !== undefined) payment.notes = notes;
+    await payment.save();
 
-    // Recalculate Account metrics
-    const updatedTotalReceived = Math.max(0, Math.round((account.totalReceived + diff) * 100) / 100);
-    const updatedOutstanding = Math.max(0, Math.round((account.expectedReturn - updatedTotalReceived) * 100) / 100);
+    // Recalculate Account metrics directly from sum of actual payment records
+    const allAccountPayments = await Payment.find({ accountId: account._id });
+    const actualTotalReceived = Math.round(allAccountPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0) * 100) / 100;
+    const actualOutstanding = Math.max(0, Math.round((account.expectedReturn - actualTotalReceived) * 100) / 100);
 
-    account.totalReceived = updatedTotalReceived;
-    account.outstanding = updatedOutstanding;
+    account.totalReceived = actualTotalReceived;
+    account.outstanding = actualOutstanding;
 
     if (account.outstanding <= 0) {
       account.outstanding = 0;
@@ -239,7 +244,7 @@ const updatePayment = async (req, res, next) => {
     // If EMI account, recalculate EMI paid/remaining amounts
     if (account.repaymentType === 'emi') {
       const emis = await EMI.find({ accountId: account._id }).sort({ emiNumber: 1 });
-      let remainingPaymentPool = updatedTotalReceived;
+      let remainingPaymentPool = actualTotalReceived;
 
       for (let emi of emis) {
         if (remainingPaymentPool >= emi.amount) {
@@ -260,14 +265,6 @@ const updatePayment = async (req, res, next) => {
         await emi.save();
       }
     }
-
-    // Update payment fields
-    payment.amount = newAmount;
-    if (paymentDate) payment.paymentDate = paymentDate;
-    if (paymentMethod) payment.paymentMethod = paymentMethod;
-    if (notes !== undefined) payment.notes = notes;
-
-    await payment.save();
 
     await logAudit({
       adminId: req.admin._id,
