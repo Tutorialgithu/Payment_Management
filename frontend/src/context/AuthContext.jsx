@@ -31,14 +31,21 @@ export const AuthProvider = ({ children }) => {
   }, [token]);
 
   const loginAdmin = async (email, password) => {
-    const data = await api.post('/auth/login', { email, password });
-    if (data.success) {
-      setToken(data.token);
-      setAdmin(data.admin);
-      localStorage.setItem('lending_admin_token', data.token);
-      localStorage.setItem('lending_admin_user', JSON.stringify(data.admin));
+    console.log('[AuthContext]: Executing loginAdmin POST /auth/login for:', email);
+    try {
+      const data = await api.post('/auth/login', { email, password });
+      console.log('[AuthContext]: Received response from /auth/login:', data);
+      if (data && data.success) {
+        setToken(data.token);
+        setAdmin(data.admin);
+        localStorage.setItem('lending_admin_token', data.token);
+        localStorage.setItem('lending_admin_user', JSON.stringify(data.admin));
+      }
+      return data;
+    } catch (err) {
+      console.error('[AuthContext]: loginAdmin request error:', err);
+      throw err;
     }
-    return data;
   };
 
   const logout = async () => {

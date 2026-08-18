@@ -10,19 +10,27 @@ const api = axios.create({
 // Request Interceptor: Attach JWT Token
 api.interceptors.request.use(
   (config) => {
+    console.log(`[API Request]: ${config.method?.toUpperCase()} ${config.url}`, config.data || '');
     const token = localStorage.getItem('lending_admin_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => {
+    console.error('[API Request Error]:', error);
+    return Promise.reject(error);
+  }
 );
 
 // Response Interceptor: Handle Token Expiration
 api.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    console.log(`[API Response ${response.status}]:`, response.config.url, response.data);
+    return response.data;
+  },
   (error) => {
+    console.error('[API Response Error]:', error.config?.url, 'Status:', error.response?.status, 'Data/Error:', error.response?.data || error.message);
     if (error.response && error.response.status === 401) {
       localStorage.removeItem('lending_admin_token');
       localStorage.removeItem('lending_admin_user');

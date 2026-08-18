@@ -20,15 +20,28 @@ const Login = () => {
     setError('');
     setLoading(true);
 
+    console.log('==================================================');
+    console.log('[Login Page]: Attempting admin sign in...');
+    console.log('[Login Page]: Submitting credentials:', { email, password });
+
     try {
       const res = await loginAdmin(email, password);
-      if (res.success) {
+      console.log('[Login Page]: Response from loginAdmin:', res);
+
+      if (res && res.success) {
+        console.log('[Login Page]: Authentication successful! Navigating to /dashboard');
         navigate('/dashboard');
+      } else {
+        console.warn('[Login Page]: Unsuccessful login status:', res);
+        setError((res && res.message) || 'Invalid admin credentials');
       }
     } catch (err) {
-      setError(err.message || 'Invalid admin credentials');
+      console.error('[Login Page Error Catch]:', err);
+      console.error('[Login Page Error Detail]:', err?.message || err);
+      setError(err?.message || 'Invalid admin credentials');
     } finally {
       setLoading(false);
+      console.log('==================================================');
     }
   };
 
