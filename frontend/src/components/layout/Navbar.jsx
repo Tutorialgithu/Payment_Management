@@ -131,7 +131,7 @@ const Navbar = ({ onToggleSidebar, onOpenReceivePayment, onOpenAddPerson, onOpen
                   onClick={async () => {
                     setShowProfileMenu(false);
                     await logout();
-                    navigate('/login');
+                    navigate('/');
                   }}
                   className="w-full flex items-center gap-2.5 px-4 py-2 text-xs text-rose-400 hover:bg-slate-800 transition"
                 >
