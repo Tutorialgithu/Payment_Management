@@ -20,7 +20,8 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'https://payment-management-d0yn.onrender.com',
-        changeOrigin: true
+        changeOrigin: true,
+        secure: false
       }
     }
   }
