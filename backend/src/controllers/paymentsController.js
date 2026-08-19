@@ -113,7 +113,7 @@ const createPayment = async (req, res, next) => {
     // If repaymentType === 'emi', run EMI allocation engine
     if (account.repaymentType === 'emi') {
       const targetEmiId = allocationType === 'manual' ? emiId : null;
-      const result = await allocatePaymentToEMIs(account, payAmount, targetEmiId);
+      const result = await allocatePaymentToEMIs(account, payAmount, targetEmiId, paymentDate);
       allocations = result.allocations;
     } else {
       // One-Time repayment calculations
@@ -244,6 +244,7 @@ const updatePayment = async (req, res, next) => {
     // If EMI account, recalculate EMI paid/remaining amounts
     if (account.repaymentType === 'emi') {
       const emis = await EMI.find({ accountId: account._id }).sort({ emiNumber: 1 });
+      const accountPaymentsAsc = await Payment.find({ accountId: account._id }).sort({ paymentDate: 1 });
       let remainingPaymentPool = actualTotalReceived;
 
       for (let emi of emis) {
@@ -251,16 +252,23 @@ const updatePayment = async (req, res, next) => {
           emi.paidAmount = emi.amount;
           emi.remainingAmount = 0;
           emi.status = 'paid';
+          if (!emi.paidDate) {
+            emi.paidDate = accountPaymentsAsc[accountPaymentsAsc.length - 1]?.paymentDate || payment.paymentDate || new Date();
+          }
           remainingPaymentPool -= emi.amount;
         } else if (remainingPaymentPool > 0) {
           emi.paidAmount = remainingPaymentPool;
           emi.remainingAmount = Math.round((emi.amount - remainingPaymentPool) * 100) / 100;
           emi.status = 'partial';
+          if (!emi.paidDate) {
+            emi.paidDate = accountPaymentsAsc[accountPaymentsAsc.length - 1]?.paymentDate || payment.paymentDate || new Date();
+          }
           remainingPaymentPool = 0;
         } else {
           emi.paidAmount = 0;
           emi.remainingAmount = emi.amount;
           emi.status = new Date(emi.dueDate) < new Date() ? 'overdue' : 'upcoming';
+          emi.paidDate = null;
         }
         await emi.save();
       }

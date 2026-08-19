@@ -31,6 +31,8 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
   const [personData, setPersonData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
+  const [selectedEmiAccountId, setSelectedEmiAccountId] = useState('all');
+  const [previewImage, setPreviewImage] = useState(null);
 
   const [editingPaymentId, setEditingPaymentId] = useState(null);
   const [editAmount, setEditAmount] = useState('');
@@ -132,9 +134,18 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
       {/* Profile Banner */}
       <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-start gap-4">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-extrabold text-2xl shadow-xl shrink-0">
-            {person.name.charAt(0)}
-          </div>
+          {person.profileImage || person.photo ? (
+            <img
+              src={person.profileImage || person.photo}
+              alt={person.name}
+              className="w-16 h-16 rounded-2xl object-cover border border-slate-700 shadow-xl shrink-0 cursor-pointer hover:opacity-90 transition"
+              onClick={() => setPreviewImage({ url: person.profileImage || person.photo, title: `${person.name}'s Profile Photo` })}
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-extrabold text-2xl shadow-xl shrink-0">
+              {person.name.charAt(0)}
+            </div>
+          )}
 
           <div>
             <div className="flex items-center gap-3">
@@ -160,6 +171,27 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                   <MapPin className="w-3.5 h-3.5 text-amber-400" />
                   {person.city}, {person.state}
                 </span>
+              )}
+            </div>
+
+            {/* Document Badges */}
+            <div className="flex flex-wrap items-center gap-2 mt-2.5">
+              {person.idProofImage && (
+                <button
+                  onClick={() => setPreviewImage({ url: person.idProofImage, title: `${person.name}'s ID Proof (${person.idProofType || 'ID'})` })}
+                  className="px-2.5 py-1 rounded-lg bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 text-xs font-bold transition flex items-center gap-1.5"
+                >
+                  <span>ID Proof 📄</span>
+                </button>
+              )}
+
+              {person.chequeImage && (
+                <button
+                  onClick={() => setPreviewImage({ url: person.chequeImage, title: `${person.name}'s Guarantee Cheque Image` })}
+                  className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 text-xs font-bold transition flex items-center gap-1.5"
+                >
+                  <span>Cheque 🏷️</span>
+                </button>
               )}
             </div>
           </div>
@@ -266,13 +298,15 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
               ) : (
                 <div className="space-y-6">
                   {accounts.map((acc, idx) => {
-                    const accountPayments = payments.filter((p) => {
-                      if (!p.accountId) return false;
-                      const pAccId = typeof p.accountId === 'object' ? (p.accountId._id || p.accountId) : p.accountId;
-                      const matchId = pAccId && String(pAccId) === String(acc._id);
-                      const matchAccNum = p.accountId?.accountNumber && acc.accountNumber && (p.accountId.accountNumber === acc.accountNumber);
-                      return matchId || matchAccNum;
-                    });
+                    const accountPayments = payments
+                      .filter((p) => {
+                        if (!p.accountId) return false;
+                        const pAccId = typeof p.accountId === 'object' ? (p.accountId._id || p.accountId) : p.accountId;
+                        const matchId = pAccId && String(pAccId) === String(acc._id);
+                        const matchAccNum = p.accountId?.accountNumber && acc.accountNumber && (p.accountId.accountNumber === acc.accountNumber);
+                        return matchId || matchAccNum;
+                      })
+                      .sort((a, b) => new Date(a.paymentDate || a.createdAt || 0) - new Date(b.paymentDate || b.createdAt || 0));
 
                     // Direct sum from actual payments array
                     const accountPaymentsSum = accountPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
@@ -281,6 +315,77 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                     const amountGivenVal = Number(acc.amountGiven) || 0;
                     const expectedReturnVal = Number(acc.expectedReturn) || 0;
                     const outstandingVal = Math.max(0, expectedReturnVal - totalReceivedVal);
+
+                    // Filter EMIs for this loan account
+                    const accountEmis = emis.filter((e) => {
+                      if (!e.accountId) return false;
+                      const eAccId = typeof e.accountId === 'object' ? (e.accountId._id || e.accountId) : e.accountId;
+                      return eAccId && String(eAccId) === String(acc._id);
+                    });
+
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+
+                    // Identify overdue / missed EMIs
+                    const overdueEmis = accountEmis.filter((e) => {
+                      const isOverdueStatus = e.status === 'overdue';
+                      const isPastDue = new Date(e.dueDate) < today && Number(e.remainingAmount) > 0 && e.status !== 'paid';
+                      return isOverdueStatus || isPastDue;
+                    });
+
+                    // Calculate Total Bounce Amount
+                    let accountBounceVal = 0;
+                    if (acc.repaymentType === 'emi') {
+                      accountBounceVal = overdueEmis.reduce((sum, e) => sum + (Number(e.remainingAmount) || Number(e.amount) || 0), 0);
+                    } else {
+                      const isPastDue = acc.dueDate && new Date(acc.dueDate) < today;
+                      accountBounceVal = (isPastDue && outstandingVal > 0) ? outstandingVal : 0;
+                    }
+
+                    // Build unified history ledger (Received Payments + Bounced/Missed Payment Dates)
+                    const historyItems = [];
+
+                    accountPayments.forEach((p) => {
+                      historyItems.push({
+                        id: p._id,
+                        isReceived: true,
+                        date: p.paymentDate || p.createdAt,
+                        receiptNumber: p.receiptNumber || 'N/A',
+                        method: p.paymentMethod || 'cash',
+                        transactionId: p.transactionId || '',
+                        amount: Number(p.amount) || 0,
+                        paymentObj: p
+                      });
+                    });
+
+                    if (acc.repaymentType === 'emi') {
+                      overdueEmis.forEach((e) => {
+                        historyItems.push({
+                          id: `bounce_${e._id}`,
+                          isReceived: false,
+                          date: e.dueDate,
+                          receiptNumber: `EMI #${e.emiNumber}`,
+                          method: 'MISSED / BOUNCED',
+                          transactionId: '',
+                          amount: Number(e.remainingAmount) || Number(e.amount) || 0,
+                          emiObj: e
+                        });
+                      });
+                    } else if (accountBounceVal > 0) {
+                      historyItems.push({
+                        id: `bounce_${acc._id}`,
+                        isReceived: false,
+                        date: acc.dueDate,
+                        receiptNumber: `DUE DATE MISSED`,
+                        method: 'OVERDUE / BOUNCED',
+                        transactionId: '',
+                        amount: accountBounceVal,
+                        accObj: acc
+                      });
+                    }
+
+                    // Sort chronologically (oldest date first, latest at bottom)
+                    historyItems.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
 
                     return (
                       <div key={acc._id} className="bg-slate-950/60 border border-slate-800 rounded-2xl p-3 md:p-5 space-y-4">
@@ -296,6 +401,14 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                           </div>
 
                           <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => onOpenReceivePaymentForPerson?.(person._id, acc._id)}
+                              className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 font-bold text-xs transition flex items-center gap-1"
+                              title="Receive Payment for this Loan"
+                            >
+                              <CreditCard className="w-3.5 h-3.5" />
+                              <span>Receive Payment</span>
+                            </button>
                             <span className="text-[10px] font-bold text-blue-400 uppercase bg-slate-900 px-2 py-1 rounded-md border border-slate-800">
                               {acc.repaymentType}
                             </span>
@@ -304,7 +417,7 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                         </div>
 
                         {/* Summary Cards above table */}
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 md:gap-2.5">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1.5 md:gap-2.5">
                           <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-1 md:p-3">
                             <span className="text-[10px] uppercase font-bold text-slate-400">Given Amount</span>
                             <p className="text-xs font-extrabold text-white mt-0.5">{symbol}{amountGivenVal.toLocaleString()}</p>
@@ -322,6 +435,10 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                             <p className="text-xs font-extrabold text-rose-400 mt-0.5">{symbol}{outstandingVal.toLocaleString()}</p>
                           </div>
                           <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2 md:p-3">
+                            <span className="text-[10px] uppercase font-bold text-slate-400">Bounce Amount</span>
+                            <p className="text-xs font-extrabold text-rose-500 mt-0.5">{symbol}{accountBounceVal.toLocaleString()}</p>
+                          </div>
+                          <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-2 md:p-3">
                             <span className="text-[10px] uppercase font-bold text-slate-400">Given Date</span>
                             <p className="text-xs font-semibold text-slate-200 mt-1">
                               {acc.dateGiven ? new Date(acc.dateGiven).toLocaleDateString() : 'N/A'}
@@ -335,13 +452,20 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                           </div>
                         </div>
 
-                        {/* Received Amount & Date Table */}
+                        {/* Received & Bounced Ledger Table */}
                         <div className="pt-2">
                           <div className="flex justify-between items-center mb-2">
-                            <h3 className="text-xs font-bold text-slate-300">History</h3>
-                            <span className="text-[11px] font-semibold text-emerald-400">
-                              Total Received: {symbol}{totalReceivedVal.toLocaleString()}
-                            </span>
+                            <h3 className="text-xs font-bold text-slate-300">History & Payment Ledger</h3>
+                            <div className="flex items-center gap-3 text-[11px] font-semibold">
+                              <span className="text-emerald-400">
+                                Total Received: {symbol}{totalReceivedVal.toLocaleString()}
+                              </span>
+                              {accountBounceVal > 0 && (
+                                <span className="text-rose-400">
+                                  Total Bounced: {symbol}{accountBounceVal.toLocaleString()}
+                                </span>
+                              )}
+                            </div>
                           </div>
 
                           {editError && editingPaymentId && (
@@ -349,92 +473,132 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                           )}
 
                           <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/40">
-                            {accountPayments.length === 0 ? (
-                              <p className="text-xs text-slate-500 text-center py-4 italic">No payments received for this loan account yet.</p>
+                            {historyItems.length === 0 ? (
+                              <p className="text-xs text-slate-500 text-center py-4 italic">No payments or bounced records for this loan account yet.</p>
                             ) : (
                               <table className="w-full text-left text-xs">
                                 <thead className="bg-slate-900 text-slate-400 font-semibold uppercase text-[10px] border-b border-slate-800">
                                   <tr>
-                                    <th className="p-3">Receipt #</th>
-                                    <th className="p-3">Received Date</th>
-                                    <th className="p-3">Payment Method</th>
-                                    <th className="p-3 text-right">Received Amount</th>
+                                    <th className="p-3 text-center w-12">S.No.</th>
+                                    <th className="p-3">Receipt / Event</th>
+                                    <th className="p-3">Date</th>
+                                    <th className="p-3">Payment Method / Status</th>
+                                    <th className="p-3 text-right">Amount</th>
                                     <th className="p-3 text-center">Action</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-800/50">
-                                  {accountPayments.map((p) => (
-                                    <tr key={p._id} className="hover:bg-slate-900/60 transition">
-                                      <td className="p-2 font-mono  text-blue-400">
-                                        {p.receiptNumber || 'N/A'}
-                                      </td>
-                                      <td className="p-2 text-slate-200 font-medium">
-                                        {p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : 'N/A'}
-                                      </td>
-                                      <td className="p-2 text-slate-400 uppercase font-medium text-[11px]">
-                                        {p.paymentMethod || 'cash'} {p.transactionId ? `(${p.transactionId})` : ''}
-                                      </td>
-                                      <td className="p-2 text-right font-extrabold text-emerald-400 text-sm">
-                                        {editingPaymentId === p._id ? (
-                                          <div className="flex items-center justify-end gap-1">
-                                            <span className="text-slate-400 text-xs">{symbol}</span>
-                                            <input
-                                              type="number"
-                                              min="0"
-                                              step="any"
-                                              value={editAmount}
-                                              onChange={(e) => setEditAmount(e.target.value)}
-                                              className="w-24 bg-slate-950 border border-blue-500 rounded px-2 py-1 text-white text-xs font-bold focus:outline-none"
-                                              autoFocus
-                                            />
-                                          </div>
-                                        ) : (
-                                          `+${symbol}${p.amount?.toLocaleString()}`
-                                        )}
-                                      </td>
-                                      <td className="p-2 text-center">
-                                        {editingPaymentId === p._id ? (
-                                          <div className="flex items-center justify-center gap-1">
+                                  {historyItems.map((item, pIdx) => {
+                                    if (item.isReceived) {
+                                      const p = item.paymentObj;
+                                      return (
+                                        <tr key={item.id} className="hover:bg-slate-900/60 transition">
+                                          <td className="p-2 text-center font-mono font-medium text-slate-400">
+                                            {pIdx + 1}
+                                          </td>
+                                          <td className="p-2 font-mono text-blue-400 font-semibold">
+                                            {p.receiptNumber || 'N/A'}
+                                          </td>
+                                          <td className="p-2 text-slate-200 font-medium">
+                                            {p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : 'N/A'}
+                                          </td>
+                                          <td className="p-2 text-slate-400 uppercase font-medium text-[11px]">
+                                            {p.paymentMethod || 'cash'} {p.transactionId ? `(${p.transactionId})` : ''}
+                                          </td>
+                                          <td className="p-2 text-right font-extrabold text-emerald-400 text-sm">
+                                            {editingPaymentId === p._id ? (
+                                              <div className="flex items-center justify-end gap-1">
+                                                <span className="text-slate-400 text-xs">{symbol}</span>
+                                                <input
+                                                  type="number"
+                                                  min="0"
+                                                  step="any"
+                                                  value={editAmount}
+                                                  onChange={(e) => setEditAmount(e.target.value)}
+                                                  className="w-24 bg-slate-950 border border-blue-500 rounded px-2 py-1 text-white text-xs font-bold focus:outline-none"
+                                                  autoFocus
+                                                />
+                                              </div>
+                                            ) : (
+                                              `+${symbol}${p.amount?.toLocaleString()}`
+                                            )}
+                                          </td>
+                                          <td className="p-2 text-center">
+                                            {editingPaymentId === p._id ? (
+                                              <div className="flex items-center justify-center gap-1">
+                                                <button
+                                                  disabled={updatingPayment}
+                                                  onClick={() => handleUpdatePayment(p._id)}
+                                                  className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50 flex items-center justify-center"
+                                                  title="Save Amount"
+                                                >
+                                                  {updatingPayment ? (
+                                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+                                                  ) : (
+                                                    <Check className="w-3.5 h-3.5" />
+                                                  )}
+                                                </button>
+                                                <button
+                                                  disabled={updatingPayment}
+                                                  onClick={() => {
+                                                    setEditingPaymentId(null);
+                                                    setEditError('');
+                                                  }}
+                                                  className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                                                  title="Cancel"
+                                                >
+                                                  <X className="w-3.5 h-3.5" />
+                                                </button>
+                                              </div>
+                                            ) : (
+                                              <button
+                                                onClick={() => {
+                                                  setEditingPaymentId(p._id);
+                                                  setEditAmount(p.amount);
+                                                  setEditError('');
+                                                }}
+                                                className="p-1.5 rounded-lg bg-slate-800 hover:bg-blue-600/20 text-slate-400 hover:text-blue-400 transition"
+                                                title="Edit Received Amount"
+                                              >
+                                                <Edit2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      );
+                                    } else {
+                                      return (
+                                        <tr key={item.id} className="bg-rose-950/20 hover:bg-rose-950/30 transition">
+                                          <td className="p-2 text-center font-mono font-medium text-slate-400">
+                                            {pIdx + 1}
+                                          </td>
+                                          <td className="p-2 font-mono text-rose-400 font-semibold">
+                                            {item.receiptNumber}
+                                          </td>
+                                          <td className="p-2 text-slate-200 font-medium">
+                                            {item.date ? new Date(item.date).toLocaleDateString() : 'N/A'}
+                                          </td>
+                                          <td className="p-2">
+                                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 inline-flex items-center gap-1">
+                                              <span>MISSED / BOUNCED</span>
+                                            </span>
+                                          </td>
+                                          <td className="p-2 text-right font-extrabold text-rose-400 text-sm">
+                                            -{symbol}{item.amount?.toLocaleString()}
+                                          </td>
+                                          <td className="p-2 text-center">
                                             <button
-                                              disabled={updatingPayment}
-                                              onClick={() => handleUpdatePayment(p._id)}
-                                              className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50 flex items-center justify-center"
-                                              title="Save Amount"
+                                              onClick={() => onOpenReceivePaymentForPerson?.(person._id, acc._id)}
+                                              className="px-2 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 font-bold text-[11px] transition"
+                                              title="Receive Payment for this Bounced Date"
                                             >
-                                              {updatingPayment ? (
-                                                <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-                                              ) : (
-                                                <Check className="w-3.5 h-3.5" />
-                                              )}
+                                              Pay Now
                                             </button>
-                                            <button
-                                              disabled={updatingPayment}
-                                              onClick={() => {
-                                                setEditingPaymentId(null);
-                                                setEditError('');
-                                              }}
-                                              className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
-                                              title="Cancel"
-                                            >
-                                              <X className="w-3.5 h-3.5" />
-                                            </button>
-                                          </div>
-                                        ) : (
-                                          <button
-                                            onClick={() => {
-                                              setEditingPaymentId(p._id);
-                                              setEditAmount(p.amount);
-                                              setEditError('');
-                                            }}
-                                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-blue-600/20 text-slate-400 hover:text-blue-400 transition"
-                                            title="Edit Received Amount"
-                                          >
-                                            <Edit2 className="w-3.5 h-3.5" />
-                                          </button>
-                                        )}
-                                      </td>
-                                    </tr>
-                                  ))}
+                                          </td>
+                                        </tr>
+                                      );
+                                    }
+                                  })}
                                 </tbody>
                               </table>
                             )}
@@ -500,22 +664,27 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
             <h2 className="text-sm font-bold text-white mb-4">Payment Ledger History</h2>
             <div className="divide-y divide-slate-800">
-              {payments.map((p) => (
-                <div key={p._id} className="py-3 flex items-center justify-between text-xs">
-                  <div>
-                    <span className="font-mono font-bold text-blue-400">{p.receiptNumber}</span>
-                    <p className="text-slate-400">
-                      {new Date(p.paymentDate).toLocaleDateString()} • {p.paymentMethod.toUpperCase()} {p.transactionId ? `(${p.transactionId})` : ''}
-                    </p>
-                  </div>
+              {[...payments]
+                .sort((a, b) => new Date(a.paymentDate || a.createdAt || 0) - new Date(b.paymentDate || b.createdAt || 0))
+                .map((p, pIdx) => (
+                  <div key={p._id} className="py-3 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-3">
+                      <span className="w-6 text-center font-mono font-bold text-slate-500">{pIdx + 1}</span>
+                      <div>
+                        <span className="font-mono font-bold text-blue-400">{p.receiptNumber}</span>
+                        <p className="text-slate-400">
+                          {new Date(p.paymentDate).toLocaleDateString()} • {p.paymentMethod.toUpperCase()} {p.transactionId ? `(${p.transactionId})` : ''}
+                        </p>
+                      </div>
+                    </div>
 
-                  <div className="text-right">
-                    <span className="text-sm font-extrabold text-emerald-400">
-                      +{symbol}{p.amount?.toLocaleString()}
-                    </span>
+                    <div className="text-right">
+                      <span className="text-sm font-extrabold text-emerald-400">
+                        +{symbol}{p.amount?.toLocaleString()}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
 
               {payments.length === 0 && (
                 <p className="text-xs text-slate-500 text-center py-6">No payments recorded for this borrower yet.</p>
@@ -526,36 +695,192 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
 
         {/* EMI SCHEDULE TAB */}
         {activeTab === 'emi' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
-            <h2 className="text-sm font-bold text-white mb-4">EMI Installments Schedule</h2>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-950 text-slate-400 font-semibold uppercase text-[10px]">
-                  <tr>
-                    <th className="p-3">EMI #</th>
-                    <th className="p-3">Account</th>
-                    <th className="p-3">Due Date</th>
-                    <th className="p-3">Amount</th>
-                    <th className="p-3">Paid</th>
-                    <th className="p-3">Remaining</th>
-                    <th className="p-3">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {emis.map((e) => (
-                    <tr key={e._id}>
-                      <td className="p-3 font-bold text-white">#{e.emiNumber}</td>
-                      <td className="p-3 text-slate-400">{e.accountId?.accountNumber || 'Account'}</td>
-                      <td className="p-3">{new Date(e.dueDate).toLocaleDateString()}</td>
-                      <td className="p-3 font-semibold text-slate-200">{symbol}{e.amount?.toLocaleString()}</td>
-                      <td className="p-3 font-bold text-emerald-400">{symbol}{e.paidAmount?.toLocaleString()}</td>
-                      <td className="p-3 font-bold text-rose-400">{symbol}{e.remainingAmount?.toLocaleString()}</td>
-                      <td className="p-3"><Badge status={e.status} /></td>
-                    </tr>
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-6">
+            {/* Header & Loan Filter Bar */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+              <div>
+                <h2 className="text-sm font-bold text-white">EMI Installments Schedule</h2>
+                <p className="text-xs text-slate-400">Filter loan account to view its specific EMI installment schedule</p>
+              </div>
+
+              {/* Loan Selection Dropdown */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400 font-semibold shrink-0">Select Loan:</span>
+                <select
+                  value={selectedEmiAccountId}
+                  onChange={(e) => setSelectedEmiAccountId(e.target.value)}
+                  className="bg-slate-950 border border-blue-500/40 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-blue-500 shadow-sm min-w-[200px]"
+                >
+                  <option value="all">All Loans ({accounts.length})</option>
+                  {accounts.map((acc, idx) => (
+                    <option key={acc._id} value={acc._id}>
+                      Loan #{idx + 1}: {acc.accountNumber} {acc.purpose ? `(${acc.purpose})` : ''}
+                    </option>
                   ))}
-                </tbody>
-              </table>
+                </select>
+              </div>
             </div>
+
+            {/* Quick Loan Selection Filter Pills */}
+            {accounts.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => setSelectedEmiAccountId('all')}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition ${selectedEmiAccountId === 'all'
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40 border border-blue-400/30'
+                    : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-white hover:border-slate-700'
+                    }`}
+                >
+                  All Loans ({accounts.length})
+                </button>
+
+                {accounts.map((acc, idx) => (
+                  <button
+                    key={acc._id}
+                    onClick={() => setSelectedEmiAccountId(acc._id)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${selectedEmiAccountId === acc._id
+                      ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40 border border-blue-400/30'
+                      : 'bg-slate-950 text-slate-400 border border-slate-800 hover:text-white hover:border-slate-700'
+                      }`}
+                  >
+                    <span>Loan #{idx + 1}: {acc.accountNumber}</span>
+                    {acc.repaymentType === 'emi' && (
+                      <span className="text-[10px] opacity-75 font-mono">({acc.emiFrequency || 'EMI'})</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {accounts.length === 0 ? (
+              <p className="text-xs text-slate-500 text-center py-6">No loan accounts found for this borrower.</p>
+            ) : (
+              <div className="space-y-6">
+                {accounts
+                  .filter((acc) => selectedEmiAccountId === 'all' || String(acc._id) === String(selectedEmiAccountId))
+                  .map((acc) => {
+                    const originalIdx = accounts.findIndex((a) => a._id === acc._id);
+                    const accountEmis = emis
+                      .filter((e) => {
+                        if (!e.accountId) return false;
+                        const eAccId = typeof e.accountId === 'object' ? (e.accountId._id || e.accountId) : e.accountId;
+                        const matchId = eAccId && String(eAccId) === String(acc._id);
+                        const matchAccNum = e.accountId?.accountNumber && acc.accountNumber && (e.accountId.accountNumber === acc.accountNumber);
+                        return matchId || matchAccNum;
+                      })
+                      .sort((a, b) => (a.emiNumber || 0) - (b.emiNumber || 0));
+
+                    const paidEmisCount = accountEmis.filter((e) => e.status === 'paid').length;
+                    const overdueEmisCount = accountEmis.filter((e) => e.status === 'overdue').length;
+
+                    return (
+                      <div key={acc._id} className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 md:p-5 space-y-4">
+                        {/* Loan Account Header */}
+                        <div className="flex flex-wrap justify-between items-center gap-3 border-b border-slate-800/80 pb-3">
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs font-mono font-bold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-lg border border-blue-500/20">
+                              Loan #{originalIdx + 1}: {acc.accountNumber}
+                            </span>
+                            <span className="text-xs font-semibold text-white">
+                              {acc.purpose || 'General Loan'}
+                            </span>
+                            <span className="text-[10px] font-bold text-purple-400 uppercase bg-purple-500/10 px-2 py-0.5 rounded-md border border-purple-500/20">
+                              {acc.repaymentType === 'emi' ? `${acc.emiFrequency || 'monthly'} EMI` : 'One-Time'}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-3 text-xs font-semibold">
+                            {acc.repaymentType === 'emi' && (
+                              <>
+                                <span className="text-slate-400">
+                                  EMI Amount: <span className="text-white font-bold">{symbol}{(acc.emiAmount || 0).toLocaleString()}</span>
+                                </span>
+                                <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 text-[11px]">
+                                  Paid: {paidEmisCount}/{accountEmis.length}
+                                </span>
+                                {overdueEmisCount > 0 && (
+                                  <span className="text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 text-[11px]">
+                                    Overdue: {overdueEmisCount}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                            <Badge status={acc.status} />
+                          </div>
+                        </div>
+
+                        {/* EMI Table for this Account */}
+                        {acc.repaymentType !== 'emi' ? (
+                          <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800/60 text-xs text-slate-400 italic">
+                            This is a one-time bullet repayment loan. Full return of {symbol}{acc.expectedReturn?.toLocaleString()} is due on {acc.dueDate ? new Date(acc.dueDate).toLocaleDateString() : 'N/A'}.
+                          </div>
+                        ) : accountEmis.length === 0 ? (
+                          <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800/60 text-xs text-slate-500 italic text-center">
+                            No EMI installments schedule generated for this loan account yet.
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-900/40">
+                            <table className="w-full text-left text-xs">
+                              <thead className="bg-slate-900 text-slate-400 font-semibold uppercase text-[10px] border-b border-slate-800">
+                                <tr>
+                                  <th className="p-3 text-center w-14">EMI #</th>
+                                  <th className="p-3">Due Date</th>
+                                  <th className="p-3">Installment</th>
+                                  <th className="p-3">Paid Amount</th>
+                                  <th className="p-3">Remaining</th>
+                                  <th className="p-3">Paid Date</th>
+                                  <th className="p-3">Status</th>
+                                  <th className="p-3 text-center">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-800/50">
+                                {accountEmis.map((e) => (
+                                  <tr key={e._id} className="hover:bg-slate-900/60 transition">
+                                    <td className="p-2.5 text-center font-mono font-extrabold text-blue-400">
+                                      #{e.emiNumber}
+                                    </td>
+                                    <td className="p-2.5 text-slate-200 font-medium">
+                                      {e.dueDate ? new Date(e.dueDate).toLocaleDateString() : 'N/A'}
+                                    </td>
+                                    <td className="p-2.5 font-bold text-white">
+                                      {symbol}{e.amount?.toLocaleString()}
+                                    </td>
+                                    <td className="p-2.5 font-bold text-emerald-400">
+                                      {symbol}{e.paidAmount?.toLocaleString()}
+                                    </td>
+                                    <td className="p-2.5 font-bold text-rose-400">
+                                      {symbol}{e.remainingAmount?.toLocaleString()}
+                                    </td>
+                                    <td className="p-2.5 text-slate-400 text-[11px]">
+                                      {e.paidDate ? new Date(e.paidDate).toLocaleDateString() : '-'}
+                                    </td>
+                                    <td className="p-2.5">
+                                      <Badge status={e.status} />
+                                    </td>
+                                    <td className="p-2.5 text-center">
+                                      {e.status !== 'paid' ? (
+                                        <button
+                                          onClick={() => onOpenReceivePaymentForPerson?.(person._id, acc._id)}
+                                          className="px-2 py-1 rounded bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 font-bold text-[11px] transition"
+                                          title="Receive Payment for this EMI"
+                                        >
+                                          Pay EMI
+                                        </button>
+                                      ) : (
+                                        <span className="text-[10px] font-bold text-emerald-500">Paid ✓</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
           </div>
         )}
 
@@ -589,6 +914,26 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
               {person.notes || 'No remarks added for this borrower.'}
             </div>
           </div>
+        )}
+
+        {/* Full Image Preview Modal */}
+        {previewImage && (
+          <Modal
+            isOpen={!!previewImage}
+            onClose={() => setPreviewImage(null)}
+            title={previewImage.title || 'Document Preview'}
+            maxWidth="max-w-lg"
+          >
+            <div className="text-center space-y-4 py-2">
+              <img src={previewImage.url} alt="Document" className="w-full max-h-[70vh] object-contain rounded-2xl border border-slate-800" />
+              <button
+                onClick={() => setPreviewImage(null)}
+                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition"
+              >
+                Close Preview
+              </button>
+            </div>
+          </Modal>
         )}
       </div>
     </div>

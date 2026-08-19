@@ -22,31 +22,61 @@ const ReceivePaymentModal = ({ isOpen, onClose, onSuccess, initialPersonId = nul
   const [error, setError] = useState('');
   const [createdPaymentInfo, setCreatedPaymentInfo] = useState(null);
 
-  // Fetch people on mount
+  // Sync state whenever modal opens or initial props change
   useEffect(() => {
     if (isOpen) {
       setCreatedPaymentInfo(null);
-      api.get('/people?limit=100').then((res) => {
-        if (res.success) setPeople(res.people);
+      setError('');
+      setAmount('');
+      setTransactionId('');
+      setNotes('');
+      const pId = initialPersonId ? String(initialPersonId) : '';
+      const aId = initialAccountId ? String(initialAccountId) : '';
+      setSelectedPersonId(pId);
+      setSelectedAccountId(aId);
+
+      api.get('/people?limit=500').then((res) => {
+        if (res.success) {
+          let fetchedPeople = res.people || [];
+          if (pId && !fetchedPeople.some((p) => String(p._id) === pId)) {
+            api.get(`/people/${pId}`).then((pRes) => {
+              if (pRes.success && pRes.person) {
+                setPeople([pRes.person, ...fetchedPeople]);
+              } else {
+                setPeople(fetchedPeople);
+              }
+            });
+          } else {
+            setPeople(fetchedPeople);
+          }
+        }
       });
     }
-  }, [isOpen]);
+  }, [isOpen, initialPersonId, initialAccountId]);
 
   // Fetch accounts when person changes
   useEffect(() => {
     if (selectedPersonId) {
       api.get(`/accounts?personId=${selectedPersonId}`).then((res) => {
         if (res.success) {
-          setAccounts(res.accounts);
-          if (res.accounts.length > 0 && !selectedAccountId) {
-            setSelectedAccountId(res.accounts[0]._id);
+          const accs = res.accounts || [];
+          setAccounts(accs);
+          if (initialAccountId && accs.some((a) => String(a._id) === String(initialAccountId))) {
+            setSelectedAccountId(String(initialAccountId));
+          } else if (accs.length > 0) {
+            if (!selectedAccountId || !accs.some((a) => String(a._id) === String(selectedAccountId))) {
+              setSelectedAccountId(accs[0]._id);
+            }
+          } else {
+            setSelectedAccountId('');
           }
         }
       });
     } else {
       setAccounts([]);
+      setSelectedAccountId('');
     }
-  }, [selectedPersonId]);
+  }, [selectedPersonId, initialAccountId]);
 
   // Fetch EMIs when account changes
   useEffect(() => {

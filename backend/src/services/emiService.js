@@ -113,9 +113,10 @@ const updateEMISchedulesStatus = async () => {
 /**
  * Allocate payment against account EMIs
  */
-const allocatePaymentToEMIs = async (account, paymentAmount, targetEmiId = null) => {
+const allocatePaymentToEMIs = async (account, paymentAmount, targetEmiId = null, paymentDate = null) => {
   let unallocated = Number(paymentAmount);
   const allocations = [];
+  const actualPaidDate = paymentDate ? new Date(paymentDate) : new Date();
 
   // Fetch all active EMIs for account sorted by dueDate
   let emis = await EMI.find({ accountId: account._id }).sort({ dueDate: 1, emiNumber: 1 });
@@ -140,7 +141,7 @@ const allocatePaymentToEMIs = async (account, paymentAmount, targetEmiId = null)
         } else {
           targetEmi.status = 'partial';
         }
-        targetEmi.paidDate = new Date();
+        targetEmi.paidDate = actualPaidDate;
         await targetEmi.save();
 
         unallocated -= allocate;
@@ -164,7 +165,7 @@ const allocatePaymentToEMIs = async (account, paymentAmount, targetEmiId = null)
     } else {
       emi.status = 'partial';
     }
-    emi.paidDate = new Date();
+    emi.paidDate = actualPaidDate;
     await emi.save();
 
     unallocated -= allocate;

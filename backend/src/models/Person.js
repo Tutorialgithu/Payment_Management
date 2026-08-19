@@ -49,6 +49,18 @@ const PersonSchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    profileImage: {
+      type: String,
+      default: ''
+    },
+    idProofImage: {
+      type: String,
+      default: ''
+    },
+    chequeImage: {
+      type: String,
+      default: ''
+    },
     idProofType: {
       type: String,
       enum: ['', 'Aadhaar', 'PAN', 'Passport', 'Driving License', 'Voter ID', 'Other'],

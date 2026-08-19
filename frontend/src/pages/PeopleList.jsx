@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Plus, UserCheck, Eye, Edit, Trash2, Send, CreditCard, Wallet } from 'lucide-react';
+import { Search, Plus, UserCheck, Eye, Edit, Trash2, Send, CreditCard, Wallet, Camera, FileText, Image as ImageIcon, Loader2, X, Check } from 'lucide-react';
 import Badge from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { compressImageFile } from '../utils/imageReducer';
 
 const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }) => {
   const { admin } = useAuth();
@@ -33,8 +34,29 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
     pincode: '',
     idProofType: '',
     idProofNumber: '',
+    profileImage: '',
+    idProofImage: '',
+    chequeImage: '',
     notes: ''
   });
+
+  const [imageWarnings, setImageWarnings] = useState({
+    profileImage: '',
+    idProofImage: '',
+    chequeImage: ''
+  });
+  const [imageSizes, setImageSizes] = useState({
+    profileImage: null,
+    idProofImage: null,
+    chequeImage: null
+  });
+  const [compressing, setCompressing] = useState({
+    profileImage: false,
+    idProofImage: false,
+    chequeImage: false
+  });
+  const [previewImage, setPreviewImage] = useState(null);
+
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -57,6 +79,30 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
     fetchPeople();
   }, [search, status, page]);
 
+  const handleImageChange = async (e, fieldName) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setCompressing((prev) => ({ ...prev, [fieldName]: true }));
+    setImageWarnings((prev) => ({ ...prev, [fieldName]: '' }));
+
+    const result = await compressImageFile(file, 50);
+
+    setCompressing((prev) => ({ ...prev, [fieldName]: false }));
+
+    if (!result.success || result.isTooLarge) {
+      setImageWarnings((prev) => ({
+        ...prev,
+        [fieldName]: result.error || 'Please reduce image size (Must be under 50KB)'
+      }));
+      setImageSizes((prev) => ({ ...prev, [fieldName]: result.sizeKb || null }));
+    } else {
+      setFormData((prev) => ({ ...prev, [fieldName]: result.dataUrl }));
+      setImageSizes((prev) => ({ ...prev, [fieldName]: result.sizeKb }));
+      setImageWarnings((prev) => ({ ...prev, [fieldName]: '' }));
+    }
+  };
+
   const handleOpenAdd = () => {
     setEditingPerson(null);
     setFormData({
@@ -71,8 +117,13 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
       pincode: '',
       idProofType: '',
       idProofNumber: '',
+      profileImage: '',
+      idProofImage: '',
+      chequeImage: '',
       notes: ''
     });
+    setImageWarnings({ profileImage: '', idProofImage: '', chequeImage: '' });
+    setImageSizes({ profileImage: null, idProofImage: null, chequeImage: null });
     setFormError('');
     setIsModalOpen(true);
   };
@@ -91,8 +142,13 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
       pincode: person.pincode || '',
       idProofType: person.idProofType || '',
       idProofNumber: person.idProofNumber || '',
+      profileImage: person.profileImage || person.photo || '',
+      idProofImage: person.idProofImage || '',
+      chequeImage: person.chequeImage || '',
       notes: person.notes || ''
     });
+    setImageWarnings({ profileImage: '', idProofImage: '', chequeImage: '' });
+    setImageSizes({ profileImage: null, idProofImage: null, chequeImage: null });
     setFormError('');
     setIsModalOpen(true);
   };
@@ -100,6 +156,12 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
   const handleSubmitForm = async (e) => {
     e.preventDefault();
     setFormError('');
+
+    if (imageWarnings.profileImage || imageWarnings.idProofImage || imageWarnings.chequeImage) {
+      setFormError('Please reduce image size to under 50KB before submitting.');
+      return;
+    }
+
     setSubmitting(true);
 
     try {
@@ -135,8 +197,8 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
       {/* Header & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-white tracking-tight">People Management</h1>
-          <p className="text-xs text-slate-400">Directory of borrowers and overall financial health</p>
+          <h1 className="text-xl font-bold text-white tracking-tight">People Directory</h1>
+          <p className="text-xs text-slate-400">Directory of borrowers, financial health, and KYC documents</p>
         </div>
 
         <button
@@ -180,14 +242,14 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
           <table className="w-full text-left text-xs text-slate-300">
             <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 uppercase font-semibold text-[10px] tracking-wider">
               <tr>
-                <th className="p-4">Borrower Name</th>
+                <th className="p-4">Borrower</th>
                 <th className="p-4">Contact</th>
                 <th className="p-4">Total Given</th>
                 <th className="p-4">Expected</th>
                 <th className="p-4">Received</th>
                 <th className="p-4">Outstanding</th>
                 <th className="p-4">Overdue</th>
-                <th className="p-4">Loans</th>
+                <th className="p-4">Documents</th>
                 <th className="p-4">Status</th>
                 <th className="p-4 text-right">Actions</th>
               </tr>
@@ -196,12 +258,28 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
               {people.map((person) => (
                 <tr key={person._id} className="hover:bg-slate-800/40 transition">
                   <td className="p-4 font-bold text-white">
-                    <button
-                      onClick={() => navigate(`/people/${person._id}`)}
-                      className="hover:text-blue-400 transition text-left"
-                    >
-                      {person.name}
-                    </button>
+                    <div className="flex items-center gap-3">
+                      {person.profileImage || person.photo ? (
+                        <img
+                          src={person.profileImage || person.photo}
+                          alt={person.name}
+                          className="w-10 h-10 rounded-full object-cover border border-slate-700 shadow shrink-0 cursor-pointer"
+                          onClick={() => setPreviewImage({ url: person.profileImage || person.photo, title: `${person.name}'s Profile Photo` })}
+                        />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-extrabold text-sm flex items-center justify-center shadow shrink-0">
+                          {person.name.charAt(0)}
+                        </div>
+                      )}
+                      <div>
+                        <button
+                          onClick={() => navigate(`/people/${person._id}`)}
+                          className="hover:text-blue-400 transition text-left font-bold text-xs"
+                        >
+                          {person.name}
+                        </button>
+                      </div>
+                    </div>
                   </td>
                   <td className="p-4 font-mono">{person.mobile}</td>
                   <td className="p-4 font-semibold text-slate-200">{symbol}{(person.totalGiven || 0).toLocaleString()}</td>
@@ -211,7 +289,33 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
                   <td className="p-4 font-bold text-rose-500">
                     {person.overdue > 0 ? `${symbol}${person.overdue.toLocaleString()}` : '-'}
                   </td>
-                  <td className="p-4 font-semibold">{person.totalAccountsCount || 0}</td>
+                  <td className="p-4">
+                    <div className="flex items-center gap-1.5">
+                      {person.idProofImage ? (
+                        <button
+                          onClick={() => setPreviewImage({ url: person.idProofImage, title: `${person.name}'s ID Proof Photo (${person.idProofType || 'ID'})` })}
+                          className="px-2 py-1 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 font-bold text-[10px] transition flex items-center gap-1"
+                          title="View ID Proof Image"
+                        >
+                          <span>ID Proof 📄</span>
+                        </button>
+                      ) : (
+                        <span className="text-slate-500 text-[10px] italic">No ID</span>
+                      )}
+
+                      {person.chequeImage ? (
+                        <button
+                          onClick={() => setPreviewImage({ url: person.chequeImage, title: `${person.name}'s Guarantee Cheque Image` })}
+                          className="px-2 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 font-bold text-[10px] transition flex items-center gap-1"
+                          title="View Cheque Image"
+                        >
+                          <span>Cheque 🏷️</span>
+                        </button>
+                      ) : (
+                        <span className="text-slate-500 text-[10px] italic">No Cheque</span>
+                      )}
+                    </div>
+                  </td>
                   <td className="p-4">
                     <Badge status={person.status} />
                   </td>
@@ -436,6 +540,153 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
             </div>
           </div>
 
+          {/* Photo & Document Upload Section (Auto Compress <= 50KB) */}
+          <div className="border-t border-slate-800 pt-3 space-y-3">
+            <div className="flex justify-between items-center">
+              <label className="block text-slate-300 font-bold text-xs uppercase tracking-wider">
+                Photo & Documents (Auto-Compressed ≤ 50KB)
+              </label>
+              <span className="text-[10px] text-slate-400">Max target size: 50 KB</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Profile Photo */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2 text-center">
+                <span className="text-slate-300 font-semibold block text-xs">Profile Photo</span>
+                {formData.profileImage ? (
+                  <div className="relative group w-20 h-20 mx-auto">
+                    <img src={formData.profileImage} alt="Profile" className="w-20 h-20 rounded-xl object-cover border border-blue-500/40" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData({ ...formData, profileImage: '' });
+                        setImageSizes({ ...imageSizes, profileImage: null });
+                        setImageWarnings({ ...imageWarnings, profileImage: '' });
+                      }}
+                      className="absolute -top-2 -right-2 p-1 bg-rose-600 text-white rounded-full hover:bg-rose-500 transition shadow"
+                      title="Remove"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="border-2 border-dashed border-slate-800 hover:border-blue-500/60 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition min-h-[80px]">
+                    <Camera className="w-5 h-5 text-slate-400 mb-1" />
+                    <span className="text-[10px] text-slate-400 font-medium">Upload Profile</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageChange(e, 'profileImage')} />
+                  </label>
+                )}
+
+                {compressing.profileImage && (
+                  <div className="flex items-center justify-center gap-1.5 text-[10px] text-blue-400 animate-pulse font-semibold">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>Compressing...</span>
+                  </div>
+                )}
+
+                {imageSizes.profileImage && !imageWarnings.profileImage && (
+                  <p className="text-[10px] text-emerald-400 font-bold font-mono">✓ {imageSizes.profileImage} KB (Under 50KB)</p>
+                )}
+
+                {imageWarnings.profileImage && (
+                  <p className="text-[10px] text-rose-400 font-semibold bg-rose-500/10 p-1.5 rounded border border-rose-500/20">
+                    ⚠️ {imageWarnings.profileImage}
+                  </p>
+                )}
+              </div>
+
+              {/* ID Proof Photo */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2 text-center">
+                <span className="text-slate-300 font-semibold block text-xs">ID Proof Photo</span>
+                {formData.idProofImage ? (
+                  <div className="relative group w-20 h-20 mx-auto">
+                    <img src={formData.idProofImage} alt="ID Proof" className="w-20 h-20 rounded-xl object-cover border border-purple-500/40" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData({ ...formData, idProofImage: '' });
+                        setImageSizes({ ...imageSizes, idProofImage: null });
+                        setImageWarnings({ ...imageWarnings, idProofImage: '' });
+                      }}
+                      className="absolute -top-2 -right-2 p-1 bg-rose-600 text-white rounded-full hover:bg-rose-500 transition shadow"
+                      title="Remove"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="border-2 border-dashed border-slate-800 hover:border-purple-500/60 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition min-h-[80px]">
+                    <ImageIcon className="w-5 h-5 text-slate-400 mb-1" />
+                    <span className="text-[10px] text-slate-400 font-medium">Upload ID Photo</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageChange(e, 'idProofImage')} />
+                  </label>
+                )}
+
+                {compressing.idProofImage && (
+                  <div className="flex items-center justify-center gap-1.5 text-[10px] text-purple-400 animate-pulse font-semibold">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>Compressing...</span>
+                  </div>
+                )}
+
+                {imageSizes.idProofImage && !imageWarnings.idProofImage && (
+                  <p className="text-[10px] text-emerald-400 font-bold font-mono">✓ {imageSizes.idProofImage} KB (Under 50KB)</p>
+                )}
+
+                {imageWarnings.idProofImage && (
+                  <p className="text-[10px] text-rose-400 font-semibold bg-rose-500/10 p-1.5 rounded border border-rose-500/20">
+                    ⚠️ {imageWarnings.idProofImage}
+                  </p>
+                )}
+              </div>
+
+              {/* Cheque Photo */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2 text-center">
+                <span className="text-slate-300 font-semibold block text-xs">Cheque Photo</span>
+                {formData.chequeImage ? (
+                  <div className="relative group w-20 h-20 mx-auto">
+                    <img src={formData.chequeImage} alt="Cheque" className="w-20 h-20 rounded-xl object-cover border border-amber-500/40" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFormData({ ...formData, chequeImage: '' });
+                        setImageSizes({ ...imageSizes, chequeImage: null });
+                        setImageWarnings({ ...imageWarnings, chequeImage: '' });
+                      }}
+                      className="absolute -top-2 -right-2 p-1 bg-rose-600 text-white rounded-full hover:bg-rose-500 transition shadow"
+                      title="Remove"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <label className="border-2 border-dashed border-slate-800 hover:border-amber-500/60 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition min-h-[80px]">
+                    <FileText className="w-5 h-5 text-slate-400 mb-1" />
+                    <span className="text-[10px] text-slate-400 font-medium">Upload Cheque</span>
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageChange(e, 'chequeImage')} />
+                  </label>
+                )}
+
+                {compressing.chequeImage && (
+                  <div className="flex items-center justify-center gap-1.5 text-[10px] text-amber-400 animate-pulse font-semibold">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>Compressing...</span>
+                  </div>
+                )}
+
+                {imageSizes.chequeImage && !imageWarnings.chequeImage && (
+                  <p className="text-[10px] text-emerald-400 font-bold font-mono">✓ {imageSizes.chequeImage} KB (Under 50KB)</p>
+                )}
+
+                {imageWarnings.chequeImage && (
+                  <p className="text-[10px] text-rose-400 font-semibold bg-rose-500/10 p-1.5 rounded border border-rose-500/20">
+                    ⚠️ {imageWarnings.chequeImage}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
           <div>
             <label className="block text-slate-300 font-semibold mb-1">Notes / Relationship Details</label>
             <textarea
@@ -465,6 +716,26 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
           </div>
         </form>
       </Modal>
+
+      {/* Full Image Preview Modal */}
+      {previewImage && (
+        <Modal
+          isOpen={!!previewImage}
+          onClose={() => setPreviewImage(null)}
+          title={previewImage.title || 'Document Preview'}
+          maxWidth="max-w-lg"
+        >
+          <div className="text-center space-y-4 py-2">
+            <img src={previewImage.url} alt="Document" className="w-full max-h-[70vh] object-contain rounded-2xl border border-slate-800" />
+            <button
+              onClick={() => setPreviewImage(null)}
+              className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs transition"
+            >
+              Close Preview
+            </button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
