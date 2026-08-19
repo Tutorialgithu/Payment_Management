@@ -1,9 +1,57 @@
+const fs = require('fs');
+const path = require('path');
 const Person = require('../models/Person');
 const Account = require('../models/Account');
 const Payment = require('../models/Payment');
 const EMI = require('../models/EMI');
 const Notification = require('../models/Notification');
 const { logAudit } = require('../models/auditLogger');
+
+// Helper function to save Base64 strings to disk inside /uploads subfolders
+const saveBase64Image = (base64Str, fieldName, personName = '') => {
+  if (!base64Str || typeof base64Str !== 'string') return '';
+  if (!base64Str.startsWith('data:image/')) {
+    return base64Str; // Already a URL path like /uploads/ProfileImg/profile_123.jpg
+  }
+
+  try {
+    let subFolder = 'ProfileImg';
+    let prefix = 'profile';
+    if (fieldName === 'idProofImage') {
+      subFolder = 'IdProof';
+      prefix = 'id';
+    } else if (fieldName === 'chequeImage') {
+      subFolder = 'Cheque';
+      prefix = 'cheque';
+    }
+
+    const uploadDir = path.join(__dirname, `../../uploads/${subFolder}`);
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    const matches = base64Str.match(/^data:image\/([a-zA-Z0-9\+\-]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) return '';
+
+    let ext = matches[1].toLowerCase();
+    if (ext === 'jpeg') ext = 'jpg';
+    if (ext.includes('png')) ext = 'png';
+    if (ext.includes('webp')) ext = 'webp';
+
+    const dataBuffer = Buffer.from(matches[2], 'base64');
+
+    const cleanName = personName ? personName.toLowerCase().replace(/[^a-z0-9]/g, '') : '';
+    const namePrefix = cleanName ? `${cleanName}_` : `${prefix}_`;
+    const filename = `${namePrefix}${Date.now()}.${ext}`;
+    const filePath = path.join(uploadDir, filename);
+
+    fs.writeFileSync(filePath, dataBuffer);
+    return `/uploads/${subFolder}/${filename}`;
+  } catch (err) {
+    console.error(`[saveBase64Image Error for ${fieldName}]:`, err);
+    return '';
+  }
+};
 
 // @desc    Get all people with financial summaries
 // @route   GET /api/people
@@ -166,12 +214,50 @@ const getPersonById = async (req, res, next) => {
 // @access  Private
 const createPerson = async (req, res, next) => {
   try {
-    const { name, mobile } = req.body;
+    const { name, mobile, profileImage, photo, idProofImage, chequeImage } = req.body;
     if (!name || !mobile) {
       return res.status(400).json({ success: false, message: 'Full name and mobile number are required' });
     }
 
-    const person = await Person.create(req.body);
+    let pImg = saveBase64Image(profileImage || photo || '', 'profileImage', name);
+    let idImg = saveBase64Image(idProofImage || '', 'idProofImage', name);
+    let chqImg = saveBase64Image(chequeImage || '', 'chequeImage', name);
+
+    // Multer upload file fallback
+    if (req.files) {
+      if (req.files.profileImage && req.files.profileImage[0]) {
+        pImg = `/uploads/ProfileImg/${req.files.profileImage[0].filename}`;
+      }
+      if (req.files.idProofImage && req.files.idProofImage[0]) {
+        idImg = `/uploads/IdProof/${req.files.idProofImage[0].filename}`;
+      }
+      if (req.files.chequeImage && req.files.chequeImage[0]) {
+        chqImg = `/uploads/Cheque/${req.files.chequeImage[0].filename}`;
+      }
+    }
+
+    const personData = {
+      name: req.body.name,
+      mobile: req.body.mobile,
+      whatsappNumber: req.body.whatsappNumber || '',
+      alternateMobile: req.body.alternateMobile || '',
+      email: req.body.email || '',
+      address: req.body.address || '',
+      city: req.body.city || '',
+      state: req.body.state || '',
+      pincode: req.body.pincode || '',
+      idProofType: req.body.idProofType || '',
+      idProofNumber: req.body.idProofNumber || '',
+      notes: req.body.notes || '',
+      status: req.body.status || 'active',
+      profileImage: pImg || '',
+      idProofImage: idImg || '',
+      chequeImage: chqImg || ''
+    };
+
+    const person = await Person.create(personData);
+
+    console.log(`[Backend Person Created]: ${person.name}, Profile Image: ${person.profileImage}, ID Proof: ${person.idProofImage}, Cheque: ${person.chequeImage}`);
 
     await logAudit({
       adminId: req.admin._id,
@@ -198,10 +284,55 @@ const updatePerson = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Person not found' });
     }
 
-    person = await Person.findByIdAndUpdate(req.params.id, req.body, {
+    const updateFields = { ...req.body };
+    delete updateFields.photo;
+    const pName = updateFields.name || person.name || '';
+
+    // Multer Upload Handling
+    if (req.files) {
+      if (req.files.profileImage && req.files.profileImage[0]) {
+        updateFields.profileImage = `/uploads/ProfileImg/${req.files.profileImage[0].filename}`;
+      }
+      if (req.files.idProofImage && req.files.idProofImage[0]) {
+        updateFields.idProofImage = `/uploads/IdProof/${req.files.idProofImage[0].filename}`;
+      }
+      if (req.files.chequeImage && req.files.chequeImage[0]) {
+        updateFields.chequeImage = `/uploads/Cheque/${req.files.chequeImage[0].filename}`;
+      }
+    }
+
+    // Convert Base64 strings to disk file URL if sent in body
+    if (updateFields.profileImage && updateFields.profileImage.startsWith('data:image/')) {
+      updateFields.profileImage = saveBase64Image(updateFields.profileImage, 'profileImage', pName);
+    }
+
+    if (updateFields.idProofImage && updateFields.idProofImage.startsWith('data:image/')) {
+      updateFields.idProofImage = saveBase64Image(updateFields.idProofImage, 'idProofImage', pName);
+    }
+
+    if (updateFields.chequeImage && updateFields.chequeImage.startsWith('data:image/')) {
+      updateFields.chequeImage = saveBase64Image(updateFields.chequeImage, 'chequeImage', pName);
+    }
+
+    // Explicitly preserve existing image fields if not provided or empty
+    if (updateFields.profileImage === undefined) {
+      updateFields.profileImage = person.profileImage || '';
+    }
+
+    if (updateFields.idProofImage === undefined) {
+      updateFields.idProofImage = person.idProofImage || '';
+    }
+
+    if (updateFields.chequeImage === undefined) {
+      updateFields.chequeImage = person.chequeImage || '';
+    }
+
+    person = await Person.findByIdAndUpdate(req.params.id, updateFields, {
       new: true,
       runValidators: true
     });
+
+    console.log(`[Backend Person Updated]: ${person.name}, Profile Image: ${person.profileImage}, ID Proof: ${person.idProofImage}, Cheque: ${person.chequeImage}`);
 
     await logAudit({
       adminId: req.admin._id,

@@ -17,11 +17,16 @@ import {
   Edit2,
   Check,
   X,
-  Loader2
+  Loader2,
+  Camera,
+  Image as ImageIcon
 } from 'lucide-react';
 import Badge from '../components/common/Badge';
+import Modal from '../components/common/Modal';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { compressImageFile } from '../utils/imageReducer';
+import { getImageUrl } from '../utils/imageHelper';
 
 const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }) => {
   const { id } = useParams();
@@ -34,10 +39,119 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
   const [selectedEmiAccountId, setSelectedEmiAccountId] = useState('all');
   const [previewImage, setPreviewImage] = useState(null);
 
+  // Edit Profile Modal State
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [submittingEdit, setSubmittingEdit] = useState(false);
+  const [editFormError, setEditFormError] = useState('');
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    mobile: '',
+    whatsappNumber: '',
+    alternateMobile: '',
+    email: '',
+    address: '',
+    city: '',
+    state: '',
+    pincode: '',
+    idProofType: '',
+    idProofNumber: '',
+    profileImage: '',
+    idProofImage: '',
+    chequeImage: '',
+    notes: ''
+  });
+
+  const [selectedFiles, setSelectedFiles] = useState({
+    profileImage: null,
+    idProofImage: null,
+    chequeImage: null
+  });
+
+  const [imageWarnings, setImageWarnings] = useState({
+    profileImage: '',
+    idProofImage: '',
+    chequeImage: ''
+  });
+  const [imageSizes, setImageSizes] = useState({
+    profileImage: null,
+    idProofImage: null,
+    chequeImage: null
+  });
+  const [compressing, setCompressing] = useState({
+    profileImage: false,
+    idProofImage: false,
+    chequeImage: false
+  });
+
   const [editingPaymentId, setEditingPaymentId] = useState(null);
   const [editAmount, setEditAmount] = useState('');
   const [updatingPayment, setUpdatingPayment] = useState(false);
   const [editError, setEditError] = useState('');
+
+  const handleOpenEditProfile = () => {
+    if (!personData?.person) return;
+    const p = personData.person;
+    const profImg = p.profileImage || p.photo || '';
+    const idImg = p.idProofImage || '';
+    const chqImg = p.chequeImage || '';
+
+    setSelectedFiles({ profileImage: null, idProofImage: null, chequeImage: null });
+    setEditFormData({
+      name: p.name || '',
+      mobile: p.mobile || '',
+      whatsappNumber: p.whatsappNumber || '',
+      alternateMobile: p.alternateMobile || '',
+      email: p.email || '',
+      address: p.address || '',
+      city: p.city || '',
+      state: p.state || '',
+      pincode: p.pincode || '',
+      idProofType: p.idProofType || '',
+      idProofNumber: p.idProofNumber || '',
+      profileImage: profImg,
+      idProofImage: idImg,
+      chequeImage: chqImg,
+      notes: p.notes || ''
+    });
+    setImageWarnings({ profileImage: '', idProofImage: '', chequeImage: '' });
+    setImageSizes({
+      profileImage: profImg ? Math.round((profImg.length * 0.75) / 1024) : null,
+      idProofImage: idImg ? Math.round((idImg.length * 0.75) / 1024) : null,
+      chequeImage: chqImg ? Math.round((chqImg.length * 0.75) / 1024) : null
+    });
+    setEditFormError('');
+    setIsEditModalOpen(true);
+  };
+
+  const handleSimpleFileSelect = (e, fieldName) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setEditFormData((prev) => ({
+        ...prev,
+        [fieldName]: reader.result
+      }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSubmitEditProfile = async (e) => {
+    e.preventDefault();
+    setEditFormError('');
+    setSubmittingEdit(true);
+
+    try {
+      await api.put(`/people/${id}`, editFormData);
+      setIsEditModalOpen(false);
+      fetchPersonProfile(false);
+    } catch (err) {
+      setEditFormError(err.message || 'Failed to update borrower profile');
+    } finally {
+      setSubmittingEdit(false);
+    }
+  };
 
   const fetchPersonProfile = async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -109,6 +223,7 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
   }
 
   const { person, summary, accounts = [], payments = [], emis = [], notifications = [] } = personData;
+  console.log('person', person);
   const symbol = admin?.currencySymbol || '₹';
 
   const tabs = [
@@ -135,14 +250,25 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
       <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-start gap-4">
           {person.profileImage || person.photo ? (
-            <img
-              src={person.profileImage || person.photo}
-              alt={person.name}
-              className="w-16 h-16 rounded-2xl object-cover border border-slate-700 shadow-xl shrink-0 cursor-pointer hover:opacity-90 transition"
-              onClick={() => setPreviewImage({ url: person.profileImage || person.photo, title: `${person.name}'s Profile Photo` })}
-            />
+            console.log('profile', person.profileImage),
+            <div className="relative group shrink-0">
+              <img
+                // src={getImageUrl(person.profileImage || person.photo)}
+                src={(person.profileImage || person.photo)}
+                alt={person.name}
+                className="w-20 h-20 md:w-24 md:h-24 rounded-2xl object-cover border-2 border-blue-500/40 shadow-2xl cursor-pointer group-hover:scale-105 group-hover:border-blue-400 transition-all duration-300"
+                onClick={() => setPreviewImage({ url: getImageUrl(person.profileImage || person.photo), title: `${person.name}'s Profile Photo` })}
+              />
+              <div
+                onClick={() => setPreviewImage({ url: getImageUrl(person.profileImage || person.photo), title: `${person.name}'s Profile Photo` })}
+                className="absolute -bottom-1 -right-1 bg-blue-600 hover:bg-blue-500 text-white p-1.5 rounded-lg shadow-lg cursor-pointer transition border border-blue-400/40"
+                title="View Full Profile Photo"
+              >
+                <Camera className="w-3.5 h-3.5" />
+              </div>
+            </div>
           ) : (
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-extrabold text-2xl shadow-xl shrink-0">
+            <div className="w-20 h-20 md:w-24 md:h-24 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-extrabold text-3xl shadow-2xl shrink-0 border border-blue-500/30">
               {person.name.charAt(0)}
             </div>
           )}
@@ -200,6 +326,15 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
         {/* Quick Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
           <button
+            onClick={handleOpenEditProfile}
+            className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700 font-bold text-xs shadow-lg transition flex items-center gap-1.5"
+            title="Edit Borrower Profile & Documents"
+          >
+            <Edit2 className="w-4 h-4" />
+            <span>Edit Profile</span>
+          </button>
+
+          <button
             onClick={() => onOpenReceivePaymentForPerson?.(person._id)}
             className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-900/30 transition flex items-center gap-1.5"
           >
@@ -216,6 +351,91 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
           </button>
         </div>
       </div>
+
+      {/* Borrower Identity & Document Gallery Card */}
+      {/* <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+              <span>📸 Borrower Identity & Document Gallery</span>
+            </h3>
+            <p className="text-xs text-slate-400">Profile photo, official ID proof, and guarantee cheque attachments</p>
+          </div>
+
+          <button
+            onClick={handleOpenEditProfile}
+            className="px-3 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/30 text-xs font-bold transition flex items-center gap-1.5 self-start sm:self-auto"
+          >
+            <Edit2 className="w-3.5 h-3.5" />
+            <span>Upload / Edit Photos</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          
+          <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center justify-between gap-3 text-center group hover:border-blue-500/40 transition">
+            <span className="text-xs font-bold text-slate-300">Profile Photo</span>
+            {person.profileImage || person.photo ? (
+              <div
+                className="relative overflow-hidden rounded-2xl border-2 border-blue-500/30 group-hover:border-blue-500 transition cursor-pointer"
+                onClick={() => setPreviewImage({ url: getImageUrl(person.profileImage || person.photo), title: `${person.name}'s Profile Photo` })}
+              >
+                <img src={getImageUrl(person.profileImage || person.photo)} alt="Profile" className="w-28 h-28 object-cover rounded-xl" />
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-xs">
+                  🔍 View Full
+                </div>
+              </div>
+            ) : (
+              <div className="w-28 h-28 rounded-2xl bg-slate-900 border border-dashed border-slate-800 flex flex-col items-center justify-center text-slate-500 text-xs text-center p-2">
+                <span>No Profile Photo</span>
+              </div>
+            )}
+            <span className="text-[10px] text-slate-400 font-semibold">{person.name}</span>
+          </div>
+
+         
+          <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center justify-between gap-3 text-center group hover:border-purple-500/40 transition">
+            <span className="text-xs font-bold text-slate-300">ID Proof ({person.idProofType || 'Identity'})</span>
+            {person.idProofImage ? (
+              <div
+                className="relative overflow-hidden rounded-2xl border-2 border-purple-500/30 group-hover:border-purple-500 transition cursor-pointer"
+                onClick={() => setPreviewImage({ url: getImageUrl(person.idProofImage), title: `${person.name}'s ID Proof (${person.idProofType || 'ID'})` })}
+              >
+                <img src={getImageUrl(person.idProofImage)} alt="ID Proof" className="w-28 h-28 object-cover rounded-xl" />
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-xs">
+                  🔍 View Full
+                </div>
+              </div>
+            ) : (
+              <div className="w-28 h-28 rounded-2xl bg-slate-900 border border-dashed border-slate-800 flex flex-col items-center justify-center text-slate-500 text-xs text-center p-2">
+                <span>No ID Proof Photo</span>
+              </div>
+            )}
+            <span className="text-[10px] text-slate-400 font-mono">{person.idProofNumber || 'No ID Number'}</span>
+          </div>
+
+          
+          <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center justify-between gap-3 text-center group hover:border-amber-500/40 transition">
+            <span className="text-xs font-bold text-slate-300">Guarantee Cheque Photo</span>
+            {person.chequeImage ? (
+              <div
+                className="relative overflow-hidden rounded-2xl border-2 border-amber-500/30 group-hover:border-amber-500 transition cursor-pointer"
+                onClick={() => setPreviewImage({ url: getImageUrl(person.chequeImage), title: `${person.name}'s Guarantee Cheque Photo` })}
+              >
+                <img src={getImageUrl(person.chequeImage)} alt="Guarantee Cheque" className="w-28 h-28 object-cover rounded-xl" />
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white font-bold text-xs">
+                  🔍 View Full
+                </div>
+              </div>
+            ) : (
+              <div className="w-28 h-28 rounded-2xl bg-slate-900 border border-dashed border-slate-800 flex flex-col items-center justify-center text-slate-500 text-xs text-center p-2">
+                <span>No Cheque Photo</span>
+              </div>
+            )}
+            <span className="text-[10px] text-slate-400 font-semibold">Security Document</span>
+          </div>
+        </div>
+      </div> */}
 
       {/* Financial Summary Grid */}
       {(() => {
@@ -915,6 +1135,257 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
             </div>
           </div>
         )}
+
+        {/* Edit Borrower Profile & Documents Modal */}
+        <Modal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          title="Edit Borrower Profile & Documents"
+          maxWidth="max-w-2xl"
+        >
+          {editFormError && (
+            <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-semibold">
+              {editFormError}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmitEditProfile} className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Full Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Rahul Sharma"
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Mobile Number *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="9876543210"
+                  value={editFormData.mobile}
+                  onChange={(e) => setEditFormData({ ...editFormData, mobile: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">WhatsApp Number</label>
+                <input
+                  type="text"
+                  placeholder="9876543210"
+                  value={editFormData.whatsappNumber}
+                  onChange={(e) => setEditFormData({ ...editFormData, whatsappNumber: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Email Address</label>
+                <input
+                  type="email"
+                  placeholder="rahul@example.com"
+                  value={editFormData.email}
+                  onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-slate-300 font-semibold mb-1">Address</label>
+              <input
+                type="text"
+                placeholder="Flat / Street address..."
+                value={editFormData.address}
+                onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">City</label>
+                <input
+                  type="text"
+                  placeholder="Mumbai"
+                  value={editFormData.city}
+                  onChange={(e) => setEditFormData({ ...editFormData, city: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">State</label>
+                <input
+                  type="text"
+                  placeholder="Maharashtra"
+                  value={editFormData.state}
+                  onChange={(e) => setEditFormData({ ...editFormData, state: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">PIN Code</label>
+                <input
+                  type="text"
+                  placeholder="400053"
+                  value={editFormData.pincode}
+                  onChange={(e) => setEditFormData({ ...editFormData, pincode: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-800 pt-3">
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">ID Proof Type (Optional)</label>
+                <select
+                  value={editFormData.idProofType}
+                  onChange={(e) => setEditFormData({ ...editFormData, idProofType: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">-- Select ID Type --</option>
+                  <option value="Aadhaar">Aadhaar Card</option>
+                  <option value="PAN">PAN Card</option>
+                  <option value="Passport">Passport</option>
+                  <option value="Driving License">Driving License</option>
+                  <option value="Voter ID">Voter ID</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">ID Proof Number</label>
+                <input
+                  type="text"
+                  placeholder="Number string..."
+                  value={editFormData.idProofNumber}
+                  onChange={(e) => setEditFormData({ ...editFormData, idProofNumber: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Photo & Document Upload Section */}
+            <div className="border-t border-slate-800 pt-3 space-y-3">
+              <label className="block text-slate-300 font-bold text-xs uppercase tracking-wider">
+                Borrower Photos & Documents
+              </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Profile Photo */}
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2 text-center">
+                  <span className="text-slate-300 font-semibold block text-xs">Profile Photo</span>
+                  {editFormData.profileImage ? (
+                    <div className="relative group w-20 h-20 mx-auto">
+                      <img src={getImageUrl(editFormData.profileImage)} alt="Profile" className="w-20 h-20 rounded-xl object-cover border border-blue-500/40" />
+                      <button
+                        type="button"
+                        onClick={() => setEditFormData({ ...editFormData, profileImage: '' })}
+                        className="absolute -top-2 -right-2 p-1 bg-rose-600 text-white rounded-full hover:bg-rose-500 transition shadow"
+                        title="Remove"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="border-2 border-dashed border-slate-800 hover:border-blue-500/60 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition min-h-[80px]">
+                      <Camera className="w-5 h-5 text-slate-400 mb-1" />
+                      <span className="text-[10px] text-slate-400 font-medium">Upload Profile</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSimpleFileSelect(e, 'profileImage')} />
+                    </label>
+                  )}
+                </div>
+
+                {/* ID Proof Photo */}
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2 text-center">
+                  <span className="text-slate-300 font-semibold block text-xs">ID Proof Photo</span>
+                  {editFormData.idProofImage ? (
+                    <div className="relative group w-20 h-20 mx-auto">
+                      <img src={getImageUrl(editFormData.idProofImage)} alt="ID Proof" className="w-20 h-20 rounded-xl object-cover border border-purple-500/40" />
+                      <button
+                        type="button"
+                        onClick={() => setEditFormData({ ...editFormData, idProofImage: '' })}
+                        className="absolute -top-2 -right-2 p-1 bg-rose-600 text-white rounded-full hover:bg-rose-500 transition shadow"
+                        title="Remove"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="border-2 border-dashed border-slate-800 hover:border-purple-500/60 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition min-h-[80px]">
+                      <ImageIcon className="w-5 h-5 text-slate-400 mb-1" />
+                      <span className="text-[10px] text-slate-400 font-medium">Upload ID Photo</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSimpleFileSelect(e, 'idProofImage')} />
+                    </label>
+                  )}
+                </div>
+
+                {/* Cheque Photo */}
+                <div className="bg-slate-950 border border-slate-800 rounded-xl p-3 space-y-2 text-center">
+                  <span className="text-slate-300 font-semibold block text-xs">Cheque Photo</span>
+                  {editFormData.chequeImage ? (
+                    <div className="relative group w-20 h-20 mx-auto">
+                      <img src={getImageUrl(editFormData.chequeImage)} alt="Cheque" className="w-20 h-20 rounded-xl object-cover border border-amber-500/40" />
+                      <button
+                        type="button"
+                        onClick={() => setEditFormData({ ...editFormData, chequeImage: '' })}
+                        className="absolute -top-2 -right-2 p-1 bg-rose-600 text-white rounded-full hover:bg-rose-500 transition shadow"
+                        title="Remove"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <label className="border-2 border-dashed border-slate-800 hover:border-amber-500/60 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition min-h-[80px]">
+                      <FileText className="w-5 h-5 text-slate-400 mb-1" />
+                      <span className="text-[10px] text-slate-400 font-medium">Upload Cheque</span>
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSimpleFileSelect(e, 'chequeImage')} />
+                    </label>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-slate-300 font-semibold mb-1">Notes / Relationship Details</label>
+              <textarea
+                rows="2"
+                placeholder="Internal remarks..."
+                value={editFormData.notes}
+                onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+              ></textarea>
+            </div>
+
+            <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(false)}
+                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={submittingEdit}
+                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold transition shadow-lg shadow-blue-900/30"
+              >
+                {submittingEdit ? 'Saving...' : 'Update Borrower Profile'}
+              </button>
+            </div>
+          </form>
+        </Modal>
 
         {/* Full Image Preview Modal */}
         {previewImage && (

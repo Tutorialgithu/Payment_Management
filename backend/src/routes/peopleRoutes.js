@@ -8,10 +8,11 @@ const {
   deletePerson
 } = require('../controllers/peopleController');
 const { protect } = require('../middleware/auth');
+const { uploadBorrowerDocuments } = require('../middleware/uploadMiddleware');
 
 router.use(protect);
 
-router.route('/').get(getPeople).post(createPerson);
-router.route('/:id').get(getPersonById).put(updatePerson).delete(deletePerson);
+router.route('/').get(getPeople).post(uploadBorrowerDocuments, createPerson);
+router.route('/:id').get(getPersonById).put(uploadBorrowerDocuments, updatePerson).delete(deletePerson);
 
 module.exports = router;

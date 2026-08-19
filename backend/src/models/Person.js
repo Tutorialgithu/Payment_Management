@@ -45,10 +45,6 @@ const PersonSchema = new mongoose.Schema(
       type: String,
       default: ''
     },
-    photo: {
-      type: String,
-      default: ''
-    },
     profileImage: {
       type: String,
       default: ''
@@ -63,7 +59,6 @@ const PersonSchema = new mongoose.Schema(
     },
     idProofType: {
       type: String,
-      enum: ['', 'Aadhaar', 'PAN', 'Passport', 'Driving License', 'Voter ID', 'Other'],
       default: ''
     },
     idProofNumber: {
@@ -80,8 +75,17 @@ const PersonSchema = new mongoose.Schema(
       default: 'active'
     }
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true }
+  }
 );
+
+// Virtual photo field pointing to profileImage for backward compatibility
+PersonSchema.virtual('photo').get(function () {
+  return this.profileImage || '';
+});
 
 PersonSchema.index({ name: 'text', mobile: 'text', email: 'text' });
 

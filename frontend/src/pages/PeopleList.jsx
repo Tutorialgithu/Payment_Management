@@ -6,6 +6,7 @@ import Modal from '../components/common/Modal';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { compressImageFile } from '../utils/imageReducer';
+import { getImageUrl } from '../utils/imageHelper';
 
 const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }) => {
   const { admin } = useAuth();
@@ -38,6 +39,12 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
     idProofImage: '',
     chequeImage: '',
     notes: ''
+  });
+
+  const [selectedFiles, setSelectedFiles] = useState({
+    profileImage: null,
+    idProofImage: null,
+    chequeImage: null
   });
 
   const [imageWarnings, setImageWarnings] = useState({
@@ -79,28 +86,19 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
     fetchPeople();
   }, [search, status, page]);
 
-  const handleImageChange = async (e, fieldName) => {
+  // Simple File Select Handler
+  const handleSimpleFileSelect = (e, fieldName) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setCompressing((prev) => ({ ...prev, [fieldName]: true }));
-    setImageWarnings((prev) => ({ ...prev, [fieldName]: '' }));
-
-    const result = await compressImageFile(file, 50);
-
-    setCompressing((prev) => ({ ...prev, [fieldName]: false }));
-
-    if (!result.success || result.isTooLarge) {
-      setImageWarnings((prev) => ({
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setFormData((prev) => ({
         ...prev,
-        [fieldName]: result.error || 'Please reduce image size (Must be under 50KB)'
+        [fieldName]: reader.result
       }));
-      setImageSizes((prev) => ({ ...prev, [fieldName]: result.sizeKb || null }));
-    } else {
-      setFormData((prev) => ({ ...prev, [fieldName]: result.dataUrl }));
-      setImageSizes((prev) => ({ ...prev, [fieldName]: result.sizeKb }));
-      setImageWarnings((prev) => ({ ...prev, [fieldName]: '' }));
-    }
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleOpenAdd = () => {
@@ -122,8 +120,6 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
       chequeImage: '',
       notes: ''
     });
-    setImageWarnings({ profileImage: '', idProofImage: '', chequeImage: '' });
-    setImageSizes({ profileImage: null, idProofImage: null, chequeImage: null });
     setFormError('');
     setIsModalOpen(true);
   };
@@ -147,8 +143,6 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
       chequeImage: person.chequeImage || '',
       notes: person.notes || ''
     });
-    setImageWarnings({ profileImage: '', idProofImage: '', chequeImage: '' });
-    setImageSizes({ profileImage: null, idProofImage: null, chequeImage: null });
     setFormError('');
     setIsModalOpen(true);
   };
@@ -156,17 +150,12 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
   const handleSubmitForm = async (e) => {
     e.preventDefault();
     setFormError('');
-
-    if (imageWarnings.profileImage || imageWarnings.idProofImage || imageWarnings.chequeImage) {
-      setFormError('Please reduce image size to under 50KB before submitting.');
-      return;
-    }
-
     setSubmitting(true);
 
     try {
       if (editingPerson) {
         await api.put(`/people/${editingPerson._id}`, formData);
+        console.log('person edit', editingPerson._id, formData);
       } else {
         await api.post('/people', formData);
       }
@@ -261,10 +250,14 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
                     <div className="flex items-center gap-3">
                       {person.profileImage || person.photo ? (
                         <img
-                          src={person.profileImage || person.photo}
+                          src={(person.profileImage || person.photo)}
                           alt={person.name}
                           className="w-10 h-10 rounded-full object-cover border border-slate-700 shadow shrink-0 cursor-pointer"
                           onClick={() => setPreviewImage({ url: person.profileImage || person.photo, title: `${person.name}'s Profile Photo` })}
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(person.name)}&background=2563eb&color=fff&size=64`;
+                          }}
                         />
                       ) : (
                         <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-extrabold text-sm flex items-center justify-center shadow shrink-0">
@@ -293,7 +286,7 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
                     <div className="flex items-center gap-1.5">
                       {person.idProofImage ? (
                         <button
-                          onClick={() => setPreviewImage({ url: person.idProofImage, title: `${person.name}'s ID Proof Photo (${person.idProofType || 'ID'})` })}
+                          onClick={() => setPreviewImage({ url: getImageUrl(person.idProofImage), title: `${person.name}'s ID Proof Photo (${person.idProofType || 'ID'})` })}
                           className="px-2 py-1 rounded bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 font-bold text-[10px] transition flex items-center gap-1"
                           title="View ID Proof Image"
                         >
@@ -305,7 +298,7 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
 
                       {person.chequeImage ? (
                         <button
-                          onClick={() => setPreviewImage({ url: person.chequeImage, title: `${person.name}'s Guarantee Cheque Image` })}
+                          onClick={() => setPreviewImage({ url: getImageUrl(person.chequeImage), title: `${person.name}'s Guarantee Cheque Image` })}
                           className="px-2 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 font-bold text-[10px] transition flex items-center gap-1"
                           title="View Cheque Image"
                         >
@@ -540,14 +533,11 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
             </div>
           </div>
 
-          {/* Photo & Document Upload Section (Auto Compress <= 50KB) */}
+          {/* Photo & Document Upload Section */}
           <div className="border-t border-slate-800 pt-3 space-y-3">
-            <div className="flex justify-between items-center">
-              <label className="block text-slate-300 font-bold text-xs uppercase tracking-wider">
-                Photo & Documents (Auto-Compressed ≤ 50KB)
-              </label>
-              <span className="text-[10px] text-slate-400">Max target size: 50 KB</span>
-            </div>
+            <label className="block text-slate-300 font-bold text-xs uppercase tracking-wider">
+              Borrower Photos & Documents
+            </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               {/* Profile Photo */}
@@ -555,14 +545,10 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
                 <span className="text-slate-300 font-semibold block text-xs">Profile Photo</span>
                 {formData.profileImage ? (
                   <div className="relative group w-20 h-20 mx-auto">
-                    <img src={formData.profileImage} alt="Profile" className="w-20 h-20 rounded-xl object-cover border border-blue-500/40" />
+                    <img src={getImageUrl(formData.profileImage)} alt="Profile" className="w-20 h-20 rounded-xl object-cover border border-blue-500/40" />
                     <button
                       type="button"
-                      onClick={() => {
-                        setFormData({ ...formData, profileImage: '' });
-                        setImageSizes({ ...imageSizes, profileImage: null });
-                        setImageWarnings({ ...imageWarnings, profileImage: '' });
-                      }}
+                      onClick={() => setFormData({ ...formData, profileImage: '' })}
                       className="absolute -top-2 -right-2 p-1 bg-rose-600 text-white rounded-full hover:bg-rose-500 transition shadow"
                       title="Remove"
                     >
@@ -573,25 +559,8 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
                   <label className="border-2 border-dashed border-slate-800 hover:border-blue-500/60 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition min-h-[80px]">
                     <Camera className="w-5 h-5 text-slate-400 mb-1" />
                     <span className="text-[10px] text-slate-400 font-medium">Upload Profile</span>
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageChange(e, 'profileImage')} />
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSimpleFileSelect(e, 'profileImage')} />
                   </label>
-                )}
-
-                {compressing.profileImage && (
-                  <div className="flex items-center justify-center gap-1.5 text-[10px] text-blue-400 animate-pulse font-semibold">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>Compressing...</span>
-                  </div>
-                )}
-
-                {imageSizes.profileImage && !imageWarnings.profileImage && (
-                  <p className="text-[10px] text-emerald-400 font-bold font-mono">✓ {imageSizes.profileImage} KB (Under 50KB)</p>
-                )}
-
-                {imageWarnings.profileImage && (
-                  <p className="text-[10px] text-rose-400 font-semibold bg-rose-500/10 p-1.5 rounded border border-rose-500/20">
-                    ⚠️ {imageWarnings.profileImage}
-                  </p>
                 )}
               </div>
 
@@ -600,14 +569,10 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
                 <span className="text-slate-300 font-semibold block text-xs">ID Proof Photo</span>
                 {formData.idProofImage ? (
                   <div className="relative group w-20 h-20 mx-auto">
-                    <img src={formData.idProofImage} alt="ID Proof" className="w-20 h-20 rounded-xl object-cover border border-purple-500/40" />
+                    <img src={getImageUrl(formData.idProofImage)} alt="ID Proof" className="w-20 h-20 rounded-xl object-cover border border-purple-500/40" />
                     <button
                       type="button"
-                      onClick={() => {
-                        setFormData({ ...formData, idProofImage: '' });
-                        setImageSizes({ ...imageSizes, idProofImage: null });
-                        setImageWarnings({ ...imageWarnings, idProofImage: '' });
-                      }}
+                      onClick={() => setFormData({ ...formData, idProofImage: '' })}
                       className="absolute -top-2 -right-2 p-1 bg-rose-600 text-white rounded-full hover:bg-rose-500 transition shadow"
                       title="Remove"
                     >
@@ -618,25 +583,8 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
                   <label className="border-2 border-dashed border-slate-800 hover:border-purple-500/60 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition min-h-[80px]">
                     <ImageIcon className="w-5 h-5 text-slate-400 mb-1" />
                     <span className="text-[10px] text-slate-400 font-medium">Upload ID Photo</span>
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageChange(e, 'idProofImage')} />
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSimpleFileSelect(e, 'idProofImage')} />
                   </label>
-                )}
-
-                {compressing.idProofImage && (
-                  <div className="flex items-center justify-center gap-1.5 text-[10px] text-purple-400 animate-pulse font-semibold">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>Compressing...</span>
-                  </div>
-                )}
-
-                {imageSizes.idProofImage && !imageWarnings.idProofImage && (
-                  <p className="text-[10px] text-emerald-400 font-bold font-mono">✓ {imageSizes.idProofImage} KB (Under 50KB)</p>
-                )}
-
-                {imageWarnings.idProofImage && (
-                  <p className="text-[10px] text-rose-400 font-semibold bg-rose-500/10 p-1.5 rounded border border-rose-500/20">
-                    ⚠️ {imageWarnings.idProofImage}
-                  </p>
                 )}
               </div>
 
@@ -645,14 +593,10 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
                 <span className="text-slate-300 font-semibold block text-xs">Cheque Photo</span>
                 {formData.chequeImage ? (
                   <div className="relative group w-20 h-20 mx-auto">
-                    <img src={formData.chequeImage} alt="Cheque" className="w-20 h-20 rounded-xl object-cover border border-amber-500/40" />
+                    <img src={getImageUrl(formData.chequeImage)} alt="Cheque" className="w-20 h-20 rounded-xl object-cover border border-amber-500/40" />
                     <button
                       type="button"
-                      onClick={() => {
-                        setFormData({ ...formData, chequeImage: '' });
-                        setImageSizes({ ...imageSizes, chequeImage: null });
-                        setImageWarnings({ ...imageWarnings, chequeImage: '' });
-                      }}
+                      onClick={() => setFormData({ ...formData, chequeImage: '' })}
                       className="absolute -top-2 -right-2 p-1 bg-rose-600 text-white rounded-full hover:bg-rose-500 transition shadow"
                       title="Remove"
                     >
@@ -663,25 +607,8 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
                   <label className="border-2 border-dashed border-slate-800 hover:border-amber-500/60 rounded-xl p-3 flex flex-col items-center justify-center cursor-pointer transition min-h-[80px]">
                     <FileText className="w-5 h-5 text-slate-400 mb-1" />
                     <span className="text-[10px] text-slate-400 font-medium">Upload Cheque</span>
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleImageChange(e, 'chequeImage')} />
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => handleSimpleFileSelect(e, 'chequeImage')} />
                   </label>
-                )}
-
-                {compressing.chequeImage && (
-                  <div className="flex items-center justify-center gap-1.5 text-[10px] text-amber-400 animate-pulse font-semibold">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>Compressing...</span>
-                  </div>
-                )}
-
-                {imageSizes.chequeImage && !imageWarnings.chequeImage && (
-                  <p className="text-[10px] text-emerald-400 font-bold font-mono">✓ {imageSizes.chequeImage} KB (Under 50KB)</p>
-                )}
-
-                {imageWarnings.chequeImage && (
-                  <p className="text-[10px] text-rose-400 font-semibold bg-rose-500/10 p-1.5 rounded border border-rose-500/20">
-                    ⚠️ {imageWarnings.chequeImage}
-                  </p>
                 )}
               </div>
             </div>
