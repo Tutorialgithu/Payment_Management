@@ -12,7 +12,13 @@ import {
   Plus,
   RefreshCw,
   TrendingUp,
-  Activity
+  Activity,
+  FileText,
+  Trash2,
+  StickyNote,
+  CheckSquare,
+  Square,
+  Edit3
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -28,6 +34,7 @@ import {
 } from 'recharts';
 import StatCard from '../components/common/StatCard';
 import Badge from '../components/common/Badge';
+import Modal from '../components/common/Modal';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -38,6 +45,23 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Quick Notes State
+  const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
+  const [notes, setNotes] = useState(() => {
+    try {
+      const saved = localStorage.getItem('lending_dashboard_notes');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [peopleList, setPeopleList] = useState([]);
+  const [noteForm, setNoteForm] = useState({
+    personName: '',
+    remainingAmount: '',
+    noteText: ''
+  });
 
   const fetchDashboard = async () => {
     try {
@@ -62,6 +86,55 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
     fetchDashboard();
   };
 
+  // Save notes to localStorage whenever notes state changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('lending_dashboard_notes', JSON.stringify(notes));
+    } catch (err) {
+      console.error('Failed to save notes:', err);
+    }
+  }, [notes]);
+
+  // Fetch people list when notes modal opens
+  useEffect(() => {
+    if (isNotesModalOpen) {
+      api.get('/people?limit=100')
+        .then((res) => {
+          if (res.success && res.people) {
+            setPeopleList(res.people);
+          }
+        })
+        .catch((err) => console.error('Error fetching people for notes:', err));
+    }
+  }, [isNotesModalOpen]);
+
+  const handleAddNote = (e) => {
+    e.preventDefault();
+    if (!noteForm.noteText.trim() && !noteForm.personName.trim() && !noteForm.remainingAmount.trim()) return;
+
+    const newNoteItem = {
+      id: Date.now().toString(),
+      personName: noteForm.personName.trim(),
+      remainingAmount: noteForm.remainingAmount.trim(),
+      noteText: noteForm.noteText.trim(),
+      createdAt: new Date().toISOString(),
+      isResolved: false
+    };
+
+    setNotes((prev) => [newNoteItem, ...prev]);
+    setNoteForm({ personName: '', remainingAmount: '', noteText: '' });
+  };
+
+  const handleToggleNoteResolved = (noteId) => {
+    setNotes((prev) =>
+      prev.map((n) => (n.id === noteId ? { ...n, isResolved: !n.isResolved } : n))
+    );
+  };
+
+  const handleDeleteNote = (noteId) => {
+    setNotes((prev) => prev.filter((n) => n.id !== noteId));
+  };
+
   const symbol = admin?.currencySymbol || '₹';
   const kpis = data?.kpis || {};
   const charts = data?.charts || {};
@@ -80,6 +153,8 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
     { name: 'Partial', value: charts.paymentStatusBreakdown?.partial || 0, color: STATUS_COLORS.partial },
     { name: 'Overdue', value: charts.paymentStatusBreakdown?.overdue || 0, color: STATUS_COLORS.overdue }
   ];
+
+  const activeNotesCount = notes.filter((n) => !n.isResolved).length;
 
   return (
     <div className="space-y-6 animate-fadeIn pb-12">
@@ -127,6 +202,21 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
             className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition"
           >
             + Person
+          </button>
+
+          {/* Quick Notes Button */}
+          <button
+            onClick={() => setIsNotesModalOpen(true)}
+            className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-lg shadow-purple-900/30 transition flex items-center gap-1.5"
+            title="Open Quick Notes & Remaining Amounts"
+          >
+            <StickyNote className="w-4 h-4" />
+            <span>Notes</span>
+            {notes.length > 0 && (
+              <span className="bg-purple-950 text-purple-200 text-[10px] px-1.5 py-0.5 rounded-full border border-purple-400/40 font-black">
+                {activeNotesCount > 0 ? activeNotesCount : notes.length}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -377,6 +467,163 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
           </div>
         </div>
       </div>
+
+      {/* Quick Notes & Remaining Payment Modal */}
+      <Modal
+        isOpen={isNotesModalOpen}
+        onClose={() => setIsNotesModalOpen(false)}
+        title="📝 Quick Notes & Remaining Payments Remarks"
+        maxWidth="max-w-xl"
+      >
+        <div className="space-y-4">
+          {/* Add New Note Form */}
+          <form onSubmit={handleAddNote} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <Plus className="w-3.5 h-3.5 text-purple-400" />
+              <span>Add New Note / Remaining Payment Remark</span>
+            </h4>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 mb-1">Borrower Name (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Ramesh Kumar"
+                  list="borrower-suggestions"
+                  value={noteForm.personName}
+                  onChange={(e) => setNoteForm({ ...noteForm, personName: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white text-xs focus:border-purple-500 focus:outline-none"
+                />
+                <datalist id="borrower-suggestions">
+                  {peopleList.map((p) => (
+                    <option key={p._id} value={p.name} />
+                  ))}
+                </datalist>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-400 mb-1">Remaining Amount / Remark (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. ₹5,000 pending till 25 Aug"
+                  value={noteForm.remainingAmount}
+                  onChange={(e) => setNoteForm({ ...noteForm, remainingAmount: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white text-xs focus:border-purple-500 focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-semibold text-slate-400 mb-1">Note / Remarks Detail *</label>
+              <textarea
+                rows="2"
+                required
+                placeholder="Write remaining details, payment promises, or internal notes..."
+                value={noteForm.noteText}
+                onChange={(e) => setNoteForm({ ...noteForm, noteText: e.target.value })}
+                className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white text-xs focus:border-purple-500 focus:outline-none"
+              ></textarea>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-lg shadow-purple-900/30 transition flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Save Note</span>
+              </button>
+            </div>
+          </form>
+
+          {/* Notes List */}
+          <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+            <div className="flex justify-between items-center px-1">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                Saved Notes ({notes.length})
+              </span>
+              {notes.length > 0 && (
+                <button
+                  onClick={() => {
+                    if (window.confirm('Clear all saved notes?')) setNotes([]);
+                  }}
+                  className="text-[10px] text-rose-400 hover:underline font-semibold"
+                >
+                  Clear All
+                </button>
+              )}
+            </div>
+
+            {notes.length === 0 ? (
+              <div className="text-center py-8 bg-slate-950/40 rounded-2xl border border-dashed border-slate-800 text-slate-500 text-xs">
+                <span>No notes added yet. Use the form above to add remaining payment remarks!</span>
+              </div>
+            ) : (
+              notes.map((n) => (
+                <div
+                  key={n.id}
+                  className={`p-3.5 rounded-2xl border transition flex items-start justify-between gap-3 ${
+                    n.isResolved
+                      ? 'bg-slate-950/40 border-slate-800/60 opacity-60'
+                      : 'bg-slate-950 border-purple-500/30 hover:border-purple-500/60'
+                  }`}
+                >
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleNoteResolved(n.id)}
+                        className="text-slate-400 hover:text-emerald-400 transition"
+                        title={n.isResolved ? 'Mark Pending' : 'Mark Done / Resolved'}
+                      >
+                        {n.isResolved ? (
+                          <CheckSquare className="w-4 h-4 text-emerald-400" />
+                        ) : (
+                          <Square className="w-4 h-4 text-slate-500" />
+                        )}
+                      </button>
+
+                      {n.personName && (
+                        <span className="text-xs font-extrabold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20">
+                          {n.personName}
+                        </span>
+                      )}
+
+                      {n.remainingAmount && (
+                        <span className="text-xs font-extrabold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
+                          {n.remainingAmount}
+                        </span>
+                      )}
+
+                      <span className="text-[10px] text-slate-500 ml-auto">
+                        {new Date(n.createdAt).toLocaleDateString('en-IN', {
+                          day: '2-digit',
+                          month: 'short',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </span>
+                    </div>
+
+                    <p className={`text-xs text-slate-200 whitespace-pre-wrap ${n.isResolved ? 'line-through text-slate-400' : ''}`}>
+                      {n.noteText}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteNote(n.id)}
+                    className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-900 transition shrink-0"
+                    title="Delete Note"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };
