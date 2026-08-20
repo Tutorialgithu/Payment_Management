@@ -19,7 +19,8 @@ import {
   X,
   Loader2,
   Camera,
-  Image as ImageIcon
+  Image as ImageIcon,
+  AlertTriangle
 } from 'lucide-react';
 import Badge from '../components/common/Badge';
 import Modal from '../components/common/Modal';
@@ -27,6 +28,52 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { compressImageFile } from '../utils/imageReducer';
 import { getImageUrl } from '../utils/imageHelper';
+
+const parseLocalDate = (dateVal) => {
+  if (!dateVal) return new Date();
+  if (dateVal instanceof Date) return new Date(dateVal);
+  if (typeof dateVal === 'string' && dateVal.includes('-')) {
+    const parts = dateVal.split('T')[0].split('-');
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      return new Date(year, month, day);
+    }
+  }
+  return new Date(dateVal);
+};
+
+const getEmiDueDate = (e, acc, i) => {
+  const emiNum = e?.emiNumber || i || 1;
+  const stepIndex = emiNum - 1;
+
+  if (e && e.dueDate) {
+    const d = new Date(e.dueDate);
+    const startD = parseLocalDate(acc.startDate || acc.dateGiven || acc.createdAt);
+    const isSameAsStart = stepIndex > 0 && d.toDateString() === startD.toDateString();
+    if (!isNaN(d.getTime()) && !isSameAsStart) {
+      return d;
+    }
+  }
+
+  const baseDate = parseLocalDate(acc.startDate || acc.dateGiven || acc.createdAt);
+
+  if (acc.emiFrequency === 'daily') {
+    baseDate.setDate(baseDate.getDate() + stepIndex * 1);
+  } else if (acc.emiFrequency === 'weekly') {
+    baseDate.setDate(baseDate.getDate() + stepIndex * 7);
+  } else if (acc.emiFrequency === 'biweekly') {
+    baseDate.setDate(baseDate.getDate() + stepIndex * 14);
+  } else if (acc.emiFrequency === 'custom') {
+    const days = Math.max(1, Number(acc.customDays) || 1);
+    baseDate.setDate(baseDate.getDate() + stepIndex * days);
+  } else {
+    // monthly default
+    baseDate.setMonth(baseDate.getMonth() + stepIndex);
+  }
+  return baseDate;
+};
 
 const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }) => {
   const { id } = useParams();
@@ -543,24 +590,23 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                       return eAccId && String(eAccId) === String(acc._id);
                     });
 
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
+                    // Calculate reference max date (latest payment date or end of today)
+                    const latestPaymentTime = accountPayments.reduce((max, p) => {
+                      const pTime = new Date(p.paymentDate || p.createdAt || 0).getTime();
+                      return pTime > max ? pTime : max;
+                    }, 0);
 
-                    // Identify overdue / missed EMIs
+                    const endOfToday = new Date();
+                    endOfToday.setHours(23, 59, 59, 999);
+                    const maxRefDate = new Date(Math.max(endOfToday.getTime(), latestPaymentTime));
+
+                    // Identify overdue / missed EMIs from stored EMI list
                     const overdueEmis = accountEmis.filter((e) => {
                       const isOverdueStatus = e.status === 'overdue';
-                      const isPastDue = new Date(e.dueDate) < today && Number(e.remainingAmount) > 0 && e.status !== 'paid';
-                      return isOverdueStatus || isPastDue;
+                      const eDueDate = e.dueDate ? new Date(e.dueDate) : null;
+                      const isPastOrMissed = eDueDate && eDueDate <= maxRefDate && Number(e.remainingAmount) > 0 && e.status !== 'paid';
+                      return isOverdueStatus || isPastOrMissed;
                     });
-
-                    // Calculate Total Bounce Amount
-                    let accountBounceVal = 0;
-                    if (acc.repaymentType === 'emi') {
-                      accountBounceVal = overdueEmis.reduce((sum, e) => sum + (Number(e.remainingAmount) || Number(e.amount) || 0), 0);
-                    } else {
-                      const isPastDue = acc.dueDate && new Date(acc.dueDate) < today;
-                      accountBounceVal = (isPastDue && outstandingVal > 0) ? outstandingVal : 0;
-                    }
 
                     // Build unified history ledger (Received Payments + Bounced/Missed Payment Dates)
                     const historyItems = [];
@@ -579,30 +625,74 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                     });
 
                     if (acc.repaymentType === 'emi') {
-                      overdueEmis.forEach((e) => {
-                        historyItems.push({
-                          id: `bounce_${e._id}`,
-                          isReceived: false,
-                          date: e.dueDate,
-                          receiptNumber: `EMI #${e.emiNumber}`,
-                          method: 'MISSED / BOUNCED',
-                          transactionId: '',
-                          amount: Number(e.remainingAmount) || Number(e.amount) || 0,
-                          emiObj: e
+                      if (accountEmis.length > 0) {
+                        overdueEmis.forEach((e) => {
+                          historyItems.push({
+                            id: `bounce_${e._id || e.emiNumber}`,
+                            isReceived: false,
+                            date: e.dueDate,
+                            receiptNumber: `EMI #${e.emiNumber}`,
+                            method: 'MISSED / BOUNCED',
+                            transactionId: '',
+                            amount: Number(e.remainingAmount) || Number(e.amount) || 0,
+                            emiObj: e
+                          });
                         });
-                      });
-                    } else if (accountBounceVal > 0) {
-                      historyItems.push({
-                        id: `bounce_${acc._id}`,
-                        isReceived: false,
-                        date: acc.dueDate,
-                        receiptNumber: `DUE DATE MISSED`,
-                        method: 'OVERDUE / BOUNCED',
-                        transactionId: '',
-                        amount: accountBounceVal,
-                        accObj: acc
-                      });
+                      } else {
+                        // Fallback: Auto-generate missed EMI gap dates based on frequency if accountEmis is empty
+                        let currDate = new Date(acc.startDate || acc.dateGiven || Date.now());
+                        currDate.setHours(0, 0, 0, 0);
+                        const emiAmt = Number(acc.emiAmount) || (expectedReturnVal / (Number(acc.numberOfEmis) || 1)) || 0;
+                        const numEmis = Number(acc.numberOfEmis) || 30;
+                        const daysInterval = acc.emiFrequency === 'daily' ? 1 : acc.emiFrequency === 'weekly' ? 7 : acc.emiFrequency === 'biweekly' ? 14 : acc.emiFrequency === 'custom' ? (Number(acc.customDays) || 1) : 30;
+
+                        for (let i = 1; i <= numEmis; i++) {
+                          if (currDate > maxRefDate) break;
+                          const dateStr = currDate.toISOString().split('T')[0];
+                          const hasPayment = accountPayments.some((p) => {
+                            const pDateStr = new Date(p.paymentDate || p.createdAt).toISOString().split('T')[0];
+                            return pDateStr === dateStr;
+                          });
+                          if (!hasPayment) {
+                            historyItems.push({
+                              id: `bounce_virtual_${i}_${dateStr}`,
+                              isReceived: false,
+                              date: new Date(currDate),
+                              receiptNumber: `EMI #${i}`,
+                              method: 'MISSED / BOUNCED',
+                              transactionId: '',
+                              amount: Math.round(emiAmt),
+                              accObj: acc
+                            });
+                          }
+
+                          if (acc.emiFrequency === 'monthly') {
+                            currDate.setMonth(currDate.getMonth() + 1);
+                          } else {
+                            currDate.setDate(currDate.getDate() + daysInterval);
+                          }
+                        }
+                      }
+                    } else {
+                      const isPastDue = acc.dueDate && new Date(acc.dueDate) <= maxRefDate;
+                      if (isPastDue && outstandingVal > 0) {
+                        historyItems.push({
+                          id: `bounce_${acc._id}`,
+                          isReceived: false,
+                          date: acc.dueDate,
+                          receiptNumber: `DUE DATE MISSED`,
+                          method: 'OVERDUE / BOUNCED',
+                          transactionId: '',
+                          amount: outstandingVal,
+                          accObj: acc
+                        });
+                      }
                     }
+
+                    // Calculate Total Bounce Amount from history items that are bounced
+                    const accountBounceVal = historyItems
+                      .filter((item) => !item.isReceived)
+                      .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
                     // Sort chronologically (oldest date first, latest at bottom)
                     historyItems.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
@@ -788,28 +878,32 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                                       );
                                     } else {
                                       return (
-                                        <tr key={item.id} className="bg-rose-950/20 hover:bg-rose-950/30 transition">
-                                          <td className="p-2 text-center font-mono font-medium text-slate-400">
+                                        <tr key={item.id} className="bg-rose-950/40 hover:bg-rose-950/60 border-l-4 border-l-rose-500 transition">
+                                          <td className="p-2 text-center font-mono font-bold text-rose-400">
                                             {pIdx + 1}
                                           </td>
-                                          <td className="p-2 font-mono text-rose-400 font-semibold">
-                                            {item.receiptNumber}
+                                          <td className="p-2 font-mono text-rose-400 font-bold">
+                                            <div className="flex items-center gap-1.5">
+                                              <AlertTriangle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                              <span>{item.receiptNumber}</span>
+                                            </div>
                                           </td>
-                                          <td className="p-2 text-slate-200 font-medium">
-                                            {item.date ? new Date(item.date).toLocaleDateString() : 'N/A'}
+                                          <td className="p-2 text-rose-200 font-bold">
+                                            {item.date ? new Date(item.date).toLocaleDateString('en-IN') : 'N/A'}
                                           </td>
                                           <td className="p-2">
-                                            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30 inline-flex items-center gap-1">
-                                              <span>MISSED / BOUNCED</span>
+                                            <span className="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold bg-rose-500/20 text-rose-400 border border-rose-500/40 inline-flex items-center gap-1 shadow-sm">
+                                              <AlertTriangle className="w-3 h-3 text-rose-400" />
+                                              <span>MISSED / BOUNCED EMI</span>
                                             </span>
                                           </td>
                                           <td className="p-2 text-right font-extrabold text-rose-400 text-sm">
-                                            -{symbol}{item.amount?.toLocaleString()}
+                                            -{symbol}{(item.amount || 0).toLocaleString()}
                                           </td>
                                           <td className="p-2 text-center">
                                             <button
                                               onClick={() => onOpenReceivePaymentForPerson?.(person._id, acc._id)}
-                                              className="px-2 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 font-bold text-[11px] transition"
+                                              className="px-2 py-1 rounded-lg bg-rose-600/30 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/40 font-bold text-[11px] transition shadow-sm"
                                               title="Receive Payment for this Bounced Date"
                                             >
                                               Pay Now
@@ -980,7 +1074,7 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                   .filter((acc) => selectedEmiAccountId === 'all' || String(acc._id) === String(selectedEmiAccountId))
                   .map((acc) => {
                     const originalIdx = accounts.findIndex((a) => a._id === acc._id);
-                    const accountEmis = emis
+                    const rawAccountEmis = emis
                       .filter((e) => {
                         if (!e.accountId) return false;
                         const eAccId = typeof e.accountId === 'object' ? (e.accountId._id || e.accountId) : e.accountId;
@@ -990,8 +1084,33 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                       })
                       .sort((a, b) => (a.emiNumber || 0) - (b.emiNumber || 0));
 
-                    const paidEmisCount = accountEmis.filter((e) => e.status === 'paid').length;
-                    const overdueEmisCount = accountEmis.filter((e) => e.status === 'overdue').length;
+                    const displayEmis = rawAccountEmis.length > 0
+                      ? rawAccountEmis.map((e, idx) => ({
+                        ...e,
+                        calculatedDueDate: getEmiDueDate(e, acc, e.emiNumber || idx + 1)
+                      }))
+                      : Array.from({ length: Number(acc.numberOfEmis) || 1 }, (_, index) => {
+                        const emiNum = index + 1;
+                        const totalReturn = Number(acc.expectedReturn) || 0;
+                        const numEmis = Number(acc.numberOfEmis) || 1;
+                        const emiAmount = Number(acc.emiAmount) || Math.round((totalReturn / numEmis) * 100) / 100;
+                        const calculatedDueDate = getEmiDueDate(null, acc, emiNum);
+                        const isPast = calculatedDueDate <= new Date();
+
+                        return {
+                          _id: `generated_${acc._id}_${emiNum}`,
+                          emiNumber: emiNum,
+                          dueDate: calculatedDueDate,
+                          calculatedDueDate: calculatedDueDate,
+                          amount: emiAmount,
+                          paidAmount: 0,
+                          remainingAmount: emiAmount,
+                          status: isPast ? 'overdue' : 'upcoming'
+                        };
+                      });
+
+                    const paidEmisCount = displayEmis.filter((e) => e.status === 'paid').length;
+                    const overdueEmisCount = displayEmis.filter((e) => e.status === 'overdue').length;
 
                     return (
                       <div key={acc._id} className="bg-slate-950/70 border border-slate-800 rounded-2xl p-4 md:p-5 space-y-4">
@@ -1016,7 +1135,7 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                                   EMI Amount: <span className="text-white font-bold">{symbol}{(acc.emiAmount || 0).toLocaleString()}</span>
                                 </span>
                                 <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 text-[11px]">
-                                  Paid: {paidEmisCount}/{accountEmis.length}
+                                  Paid: {paidEmisCount}/{displayEmis.length}
                                 </span>
                                 {overdueEmisCount > 0 && (
                                   <span className="text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 text-[11px]">
@@ -1034,7 +1153,7 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                           <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800/60 text-xs text-slate-400 italic">
                             This is a one-time bullet repayment loan. Full return of {symbol}{acc.expectedReturn?.toLocaleString()} is due on {acc.dueDate ? new Date(acc.dueDate).toLocaleDateString() : 'N/A'}.
                           </div>
-                        ) : accountEmis.length === 0 ? (
+                        ) : displayEmis.length === 0 ? (
                           <div className="p-4 rounded-xl bg-slate-900/40 border border-slate-800/60 text-xs text-slate-500 italic text-center">
                             No EMI installments schedule generated for this loan account yet.
                           </div>
@@ -1054,13 +1173,13 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-800/50">
-                                {accountEmis.map((e) => (
+                                {displayEmis.map((e) => (
                                   <tr key={e._id} className="hover:bg-slate-900/60 transition">
                                     <td className="p-2.5 text-center font-mono font-extrabold text-blue-400">
                                       #{e.emiNumber}
                                     </td>
-                                    <td className="p-2.5 text-slate-200 font-medium">
-                                      {e.dueDate ? new Date(e.dueDate).toLocaleDateString() : 'N/A'}
+                                    <td className="p-2.5 text-slate-200 font-medium font-mono">
+                                      {new Date(e.calculatedDueDate || e.dueDate).toLocaleDateString('en-IN')}
                                     </td>
                                     <td className="p-2.5 font-bold text-white">
                                       {symbol}{e.amount?.toLocaleString()}

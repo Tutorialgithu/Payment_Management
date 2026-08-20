@@ -1,6 +1,21 @@
 const EMI = require('../models/EMI');
 const Account = require('../models/Account');
 
+const parseLocalDate = (dateVal) => {
+  if (!dateVal) return new Date();
+  if (dateVal instanceof Date) return new Date(dateVal);
+  if (typeof dateVal === 'string' && dateVal.includes('-')) {
+    const parts = dateVal.split('T')[0].split('-');
+    if (parts.length === 3) {
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      return new Date(year, month, day);
+    }
+  }
+  return new Date(dateVal);
+};
+
 /**
  * Generate EMI Schedule for an account
  */
@@ -23,7 +38,7 @@ const generateEMISchedule = async (account) => {
   }
 
   const emis = [];
-  let currentDate = new Date(account.startDate || account.dateGiven || Date.now());
+  let currentDate = parseLocalDate(account.startDate || account.dateGiven);
   let runningTotal = 0;
 
   for (let i = 1; i <= numberOfEmis; i++) {
@@ -61,6 +76,10 @@ const generateEMISchedule = async (account) => {
         break;
       case 'biweekly':
         currentDate.setDate(currentDate.getDate() + 14);
+        break;
+      case 'custom':
+        const days = Math.max(1, Number(account.customDays) || 1);
+        currentDate.setDate(currentDate.getDate() + days);
         break;
       case 'monthly':
       default:

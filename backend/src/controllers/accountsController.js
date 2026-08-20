@@ -99,6 +99,7 @@ const createAccount = async (req, res, next) => {
       emiAmount,
       emiFrequency,
       numberOfEmis,
+      customDays,
       notes
     } = req.body;
 
@@ -136,6 +137,7 @@ const createAccount = async (req, res, next) => {
       emiAmount: Number(emiAmount) || 0,
       emiFrequency: emiFrequency || 'monthly',
       numberOfEmis: Number(numberOfEmis) || 1,
+      customDays: Number(customDays) || 0,
       totalReceived: 0,
       outstanding: expected,
       status: 'active',

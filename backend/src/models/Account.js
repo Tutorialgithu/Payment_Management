@@ -63,6 +63,10 @@ const AccountSchema = new mongoose.Schema(
       type: Number,
       default: 1
     },
+    customDays: {
+      type: Number,
+      default: 0
+    },
     // Financial Counters
     totalReceived: {
       type: Number,

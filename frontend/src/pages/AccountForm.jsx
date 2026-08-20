@@ -27,6 +27,7 @@ const AccountForm = () => {
     emiAmount: '',
     emiFrequency: 'monthly',
     numberOfEmis: '12',
+    customDays: '5',
     notes: ''
   });
 
@@ -83,6 +84,10 @@ const AccountForm = () => {
           case 'biweekly':
             currentDate.setDate(currentDate.getDate() + 14);
             break;
+          case 'custom':
+            const days = Math.max(1, Number(formData.customDays) || 1);
+            currentDate.setDate(currentDate.getDate() + days);
+            break;
           case 'monthly':
           default:
             currentDate.setMonth(currentDate.getMonth() + 1);
@@ -93,7 +98,7 @@ const AccountForm = () => {
     } else {
       setSchedulePreview([]);
     }
-  }, [formData.amountGiven, formData.expectedReturn, formData.repaymentType, formData.numberOfEmis, formData.emiAmount, formData.emiFrequency, formData.startDate]);
+  }, [formData.amountGiven, formData.expectedReturn, formData.repaymentType, formData.numberOfEmis, formData.emiAmount, formData.emiFrequency, formData.customDays, formData.startDate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -156,7 +161,7 @@ const AccountForm = () => {
                   required
                   value={formData.personId}
                   onChange={(e) => setFormData({ ...formData, personId: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+                  className="w-full px-3.5 h-10 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
                 >
                   <option value="">-- Select Borrower --</option>
                   {people.map((p) => (
@@ -237,11 +242,10 @@ const AccountForm = () => {
                 <button
                   type="button"
                   onClick={() => setFormData({ ...formData, repaymentType: 'one-time' })}
-                  className={`p-4 rounded-2xl border text-left transition ${
-                    formData.repaymentType === 'one-time'
-                      ? 'bg-blue-600/15 border-blue-500 text-white'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-                  }`}
+                  className={`p-4 rounded-2xl border text-left transition ${formData.repaymentType === 'one-time'
+                    ? 'bg-blue-600/15 border-blue-500 text-white'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
                 >
                   <p className="font-bold text-sm">One-Time Payment</p>
                   <p className="text-[11px] mt-0.5">Entire expected amount returned on single due date.</p>
@@ -250,11 +254,10 @@ const AccountForm = () => {
                 <button
                   type="button"
                   onClick={() => setFormData({ ...formData, repaymentType: 'emi' })}
-                  className={`p-4 rounded-2xl border text-left transition ${
-                    formData.repaymentType === 'emi'
-                      ? 'bg-blue-600/15 border-blue-500 text-white'
-                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-                  }`}
+                  className={`p-4 rounded-2xl border text-left transition ${formData.repaymentType === 'emi'
+                    ? 'bg-blue-600/15 border-blue-500 text-white'
+                    : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                    }`}
                 >
                   <p className="font-bold text-sm">EMI Installments</p>
                   <p className="text-[11px] mt-0.5">Returned periodically in fixed EMI schedule.</p>
@@ -279,20 +282,36 @@ const AccountForm = () => {
             {/* EMI Parameters */}
             {formData.repaymentType === 'emi' && (
               <div className="space-y-4 bg-slate-950 p-4 rounded-2xl border border-slate-800">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className={`grid grid-cols-1 ${formData.emiFrequency === 'custom' ? 'sm:grid-cols-4' : 'sm:grid-cols-3'} gap-3`}>
                   <div>
                     <label className="block text-slate-300 font-semibold mb-1">Frequency</label>
                     <select
                       value={formData.emiFrequency}
                       onChange={(e) => setFormData({ ...formData, emiFrequency: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                      className="w-full px-3 h-10 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
                     >
                       <option value="monthly">Monthly</option>
                       <option value="weekly">Weekly</option>
                       <option value="biweekly">Bi-Weekly (14 days)</option>
                       <option value="daily">Daily</option>
+                      <option value="custom">Custom Days Interval</option>
                     </select>
                   </div>
+
+                  {formData.emiFrequency === 'custom' && (
+                    <div>
+                      <label className="block text-slate-300 font-semibold mb-1">Every (Days) *</label>
+                      <input
+                        type="number"
+                        min="1"
+                        required
+                        placeholder="e.g. 5, 10, 15"
+                        value={formData.customDays}
+                        onChange={(e) => setFormData({ ...formData, customDays: e.target.value })}
+                        className="w-full px-3 h-10 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                      />
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-slate-300 font-semibold mb-1">Number of EMIs</label>
