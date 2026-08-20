@@ -18,7 +18,8 @@ import {
   StickyNote,
   CheckSquare,
   Square,
-  Edit3
+  Edit3,
+  X
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -56,6 +57,8 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
       return [];
     }
   });
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [notesLoading, setNotesLoading] = useState(false);
   const [peopleList, setPeopleList] = useState([]);
   const [noteForm, setNoteForm] = useState({
     personName: '',
@@ -77,13 +80,29 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
     }
   };
 
+  const fetchNotes = async () => {
+    setNotesLoading(true);
+    try {
+      const res = await api.get('/notes');
+      if (res.success && Array.isArray(res.notes)) {
+        setNotes(res.notes);
+      }
+    } catch (err) {
+      console.error('Backend notes fetch error, using local state:', err);
+    } finally {
+      setNotesLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchDashboard();
+    fetchNotes();
   }, []);
 
   const handleRefresh = () => {
     setRefreshing(true);
     fetchDashboard();
+    fetchNotes();
   };
 
   // Save notes to localStorage whenever notes state changes
@@ -95,9 +114,10 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
     }
   }, [notes]);
 
-  // Fetch people list when notes modal opens
+  // Fetch people list & notes when notes modal opens
   useEffect(() => {
     if (isNotesModalOpen) {
+      fetchNotes();
       api.get('/people?limit=100')
         .then((res) => {
           if (res.success && res.people) {
@@ -108,31 +128,116 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
     }
   }, [isNotesModalOpen]);
 
-  const handleAddNote = (e) => {
+  const handleSaveNote = async (e) => {
     e.preventDefault();
     if (!noteForm.noteText.trim() && !noteForm.personName.trim() && !noteForm.remainingAmount.trim()) return;
 
-    const newNoteItem = {
-      id: Date.now().toString(),
-      personName: noteForm.personName.trim(),
-      remainingAmount: noteForm.remainingAmount.trim(),
-      noteText: noteForm.noteText.trim(),
-      createdAt: new Date().toISOString(),
-      isResolved: false
-    };
+    if (editingNoteId) {
+      // Edit existing note
+      const updatedFields = {
+        personName: noteForm.personName.trim(),
+        remainingAmount: noteForm.remainingAmount.trim(),
+        noteText: noteForm.noteText.trim()
+      };
 
-    setNotes((prev) => [newNoteItem, ...prev]);
+      setNotes((prev) =>
+        prev.map((n) =>
+          (n._id === editingNoteId || n.id === editingNoteId)
+            ? { ...n, ...updatedFields }
+            : n
+        )
+      );
+
+      try {
+        await api.put(`/notes/${editingNoteId}`, updatedFields);
+      } catch (err) {
+        console.error('Backend update note error:', err);
+      }
+
+      setEditingNoteId(null);
+      setNoteForm({ personName: '', remainingAmount: '', noteText: '' });
+    } else {
+      // Add new note
+      const newNoteItem = {
+        id: Date.now().toString(),
+        personName: noteForm.personName.trim(),
+        remainingAmount: noteForm.remainingAmount.trim(),
+        noteText: noteForm.noteText.trim(),
+        createdAt: new Date().toISOString(),
+        isResolved: false
+      };
+
+      setNotes((prev) => [newNoteItem, ...prev]);
+      setNoteForm({ personName: '', remainingAmount: '', noteText: '' });
+
+      try {
+        const res = await api.post('/notes', {
+          personName: noteForm.personName.trim(),
+          remainingAmount: noteForm.remainingAmount.trim(),
+          noteText: noteForm.noteText.trim()
+        });
+        if (res.success && res.note) {
+          setNotes((prev) =>
+            prev.map((n) => (n.id === newNoteItem.id ? res.note : n))
+          );
+        }
+      } catch (err) {
+        console.error('Backend create note error:', err);
+      }
+    }
+  };
+
+  const handleStartEditNote = (note) => {
+    const id = note._id || note.id;
+    setEditingNoteId(id);
+    setNoteForm({
+      personName: note.personName || '',
+      remainingAmount: note.remainingAmount || '',
+      noteText: note.noteText || ''
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingNoteId(null);
     setNoteForm({ personName: '', remainingAmount: '', noteText: '' });
   };
 
   const handleToggleNoteResolved = (noteId) => {
     setNotes((prev) =>
-      prev.map((n) => (n.id === noteId ? { ...n, isResolved: !n.isResolved } : n))
+      prev.map((n) => {
+        const id = n._id || n.id;
+        if (id === noteId) {
+          const newStatus = !n.isResolved;
+          api.put(`/notes/${id}`, { isResolved: newStatus }).catch(() => {});
+          return { ...n, isResolved: newStatus };
+        }
+        return n;
+      })
     );
   };
 
-  const handleDeleteNote = (noteId) => {
-    setNotes((prev) => prev.filter((n) => n.id !== noteId));
+  const handleDeleteNote = async (noteId) => {
+    if (!window.confirm('Are you sure you want to delete this note?')) return;
+    setNotes((prev) => prev.filter((n) => (n._id || n.id) !== noteId));
+    if (editingNoteId === noteId) {
+      handleCancelEdit();
+    }
+    try {
+      await api.delete(`/notes/${noteId}`);
+    } catch (err) {
+      console.error('Backend delete note error:', err);
+    }
+  };
+
+  const handleClearAllNotes = async () => {
+    if (!window.confirm('Clear all saved notes?')) return;
+    setNotes([]);
+    handleCancelEdit();
+    try {
+      await api.delete('/notes');
+    } catch (err) {
+      console.error('Backend clear all notes error:', err);
+    }
   };
 
   const symbol = admin?.currencySymbol || '₹';
@@ -471,17 +576,41 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
       {/* Quick Notes & Remaining Payment Modal */}
       <Modal
         isOpen={isNotesModalOpen}
-        onClose={() => setIsNotesModalOpen(false)}
+        onClose={() => {
+          setIsNotesModalOpen(false);
+          handleCancelEdit();
+        }}
         title="📝 Quick Notes & Remaining Payments Remarks"
         maxWidth="max-w-xl"
       >
         <div className="space-y-4">
-          {/* Add New Note Form */}
-          <form onSubmit={handleAddNote} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Plus className="w-3.5 h-3.5 text-purple-400" />
-              <span>Add New Note / Remaining Payment Remark</span>
-            </h4>
+          {/* Add / Edit Note Form */}
+          <form onSubmit={handleSaveNote} className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                {editingNoteId ? (
+                  <>
+                    <Edit3 className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Edit Note / Payment Remark</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5 text-purple-400" />
+                    <span>Add New Note / Remaining Payment Remark</span>
+                  </>
+                )}
+              </h4>
+              {editingNoteId && (
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="text-[11px] text-slate-400 hover:text-slate-200 underline flex items-center gap-1"
+                >
+                  <X className="w-3 h-3" />
+                  <span>Cancel Edit</span>
+                </button>
+              )}
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <div>
@@ -525,13 +654,31 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
               ></textarea>
             </div>
 
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              {editingNoteId && (
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition"
+                >
+                  Cancel
+                </button>
+              )}
               <button
                 type="submit"
                 className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-lg shadow-purple-900/30 transition flex items-center gap-1.5"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Save Note</span>
+                {editingNoteId ? (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Update Note</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Save Note</span>
+                  </>
+                )}
               </button>
             </div>
           </form>
@@ -544,9 +691,7 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
               </span>
               {notes.length > 0 && (
                 <button
-                  onClick={() => {
-                    if (window.confirm('Clear all saved notes?')) setNotes([]);
-                  }}
+                  onClick={handleClearAllNotes}
                   className="text-[10px] text-rose-400 hover:underline font-semibold"
                 >
                   Clear All
@@ -554,72 +699,97 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
               )}
             </div>
 
-            {notes.length === 0 ? (
+            {notesLoading ? (
+              <div className="text-center py-8 text-slate-500 text-xs">
+                <span>Loading notes...</span>
+              </div>
+            ) : notes.length === 0 ? (
               <div className="text-center py-8 bg-slate-950/40 rounded-2xl border border-dashed border-slate-800 text-slate-500 text-xs">
                 <span>No notes added yet. Use the form above to add remaining payment remarks!</span>
               </div>
             ) : (
-              notes.map((n) => (
-                <div
-                  key={n.id}
-                  className={`p-3.5 rounded-2xl border transition flex items-start justify-between gap-3 ${
-                    n.isResolved
-                      ? 'bg-slate-950/40 border-slate-800/60 opacity-60'
-                      : 'bg-slate-950 border-purple-500/30 hover:border-purple-500/60'
-                  }`}
-                >
-                  <div className="space-y-1.5 flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleNoteResolved(n.id)}
-                        className="text-slate-400 hover:text-emerald-400 transition"
-                        title={n.isResolved ? 'Mark Pending' : 'Mark Done / Resolved'}
-                      >
-                        {n.isResolved ? (
-                          <CheckSquare className="w-4 h-4 text-emerald-400" />
-                        ) : (
-                          <Square className="w-4 h-4 text-slate-500" />
+              notes.map((n) => {
+                const noteId = n._id || n.id;
+                const isEditingThis = editingNoteId === noteId;
+                return (
+                  <div
+                    key={noteId}
+                    className={`p-3.5 rounded-2xl border transition flex items-start justify-between gap-3 ${
+                      isEditingThis
+                        ? 'bg-purple-950/30 border-purple-500/80 ring-1 ring-purple-500/50'
+                        : n.isResolved
+                        ? 'bg-slate-950/40 border-slate-800/60 opacity-60'
+                        : 'bg-slate-950 border-purple-500/30 hover:border-purple-500/60'
+                    }`}
+                  >
+                    <div className="space-y-1.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleNoteResolved(noteId)}
+                          className="text-slate-400 hover:text-emerald-400 transition"
+                          title={n.isResolved ? 'Mark Pending' : 'Mark Done / Resolved'}
+                        >
+                          {n.isResolved ? (
+                            <CheckSquare className="w-4 h-4 text-emerald-400" />
+                          ) : (
+                            <Square className="w-4 h-4 text-slate-500" />
+                          )}
+                        </button>
+
+                        {n.personName && (
+                          <span className="text-xs font-extrabold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20">
+                            {n.personName}
+                          </span>
                         )}
-                      </button>
 
-                      {n.personName && (
-                        <span className="text-xs font-extrabold text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-lg border border-blue-500/20">
-                          {n.personName}
+                        {n.remainingAmount && (
+                          <span className="text-xs font-extrabold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
+                            {n.remainingAmount}
+                          </span>
+                        )}
+
+                        <span className="text-[10px] text-slate-500 ml-auto">
+                          {n.createdAt ? new Date(n.createdAt).toLocaleDateString('en-IN', {
+                            day: '2-digit',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          }) : ''}
                         </span>
-                      )}
+                      </div>
 
-                      {n.remainingAmount && (
-                        <span className="text-xs font-extrabold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20">
-                          {n.remainingAmount}
-                        </span>
-                      )}
-
-                      <span className="text-[10px] text-slate-500 ml-auto">
-                        {new Date(n.createdAt).toLocaleDateString('en-IN', {
-                          day: '2-digit',
-                          month: 'short',
-                          hour: '2-digit',
-                          minute: '2-digit'
-                        })}
-                      </span>
+                      <p className={`text-xs text-slate-200 whitespace-pre-wrap ${n.isResolved ? 'line-through text-slate-400' : ''}`}>
+                        {n.noteText}
+                      </p>
                     </div>
 
-                    <p className={`text-xs text-slate-200 whitespace-pre-wrap ${n.isResolved ? 'line-through text-slate-400' : ''}`}>
-                      {n.noteText}
-                    </p>
-                  </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleStartEditNote(n)}
+                        className={`p-1 rounded-lg transition ${
+                          isEditingThis
+                            ? 'text-purple-400 bg-purple-500/20'
+                            : 'text-slate-500 hover:text-purple-400 hover:bg-slate-900'
+                        }`}
+                        title="Edit Note"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
 
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteNote(n.id)}
-                    className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-900 transition shrink-0"
-                    title="Delete Note"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteNote(noteId)}
+                        className="p-1 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-slate-900 transition"
+                        title="Delete Note"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>

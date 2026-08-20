@@ -231,6 +231,7 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
           <table className="w-full text-left text-xs text-slate-300">
             <thead className="bg-slate-950/80 border-b border-slate-800 text-slate-400 uppercase font-semibold text-[10px] tracking-wider">
               <tr>
+                <th className="p-4 w-12 text-center">S.No.</th>
                 <th className="p-4">Borrower</th>
                 <th className="p-4">Contact</th>
                 <th className="p-4">Total Given</th>
@@ -244,8 +245,11 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {people.map((person) => (
+              {people.map((person, index) => (
                 <tr key={person._id} className="hover:bg-slate-800/40 transition">
+                  <td className="p-4 text-center font-bold text-slate-400 text-xs">
+                    {(page - 1) * 10 + index + 1}
+                  </td>
                   <td className="p-4 font-bold text-white">
                     <div className="flex items-center gap-3">
                       {person.profileImage || person.photo ? (
@@ -360,7 +364,7 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
 
               {!loading && people.length === 0 && (
                 <tr>
-                  <td colSpan="10" className="p-8 text-center text-slate-500">
+                  <td colSpan="11" className="p-8 text-center text-slate-500">
                     No borrowers found matching criteria.
                   </td>
                 </tr>

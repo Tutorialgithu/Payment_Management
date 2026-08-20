@@ -22,6 +22,7 @@ const reportsRoutes = require('./routes/reportsRoutes');
 const notificationsRoutes = require('./routes/notificationsRoutes');
 const settingsRoutes = require('./routes/settingsRoutes');
 const auditRoutes = require('./routes/auditRoutes');
+const notesRoutes = require('./routes/notesRoutes');
 
 const app = express();
 
@@ -74,6 +75,7 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/audit-logs', auditRoutes);
+app.use('/api/notes', notesRoutes);
 
 // Global Error Handler
 app.use(errorHandler);

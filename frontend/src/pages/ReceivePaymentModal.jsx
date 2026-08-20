@@ -235,7 +235,7 @@ const ReceivePaymentModal = ({ isOpen, onClose, onSuccess, initialPersonId = nul
               setSelectedAccountId('');
             }}
             required
-            className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+            className="w-full px-3 h-8 py-2 bg-slate-950 border border-slate-800 rounded-2xl text-white focus:border-blue-500 focus:outline-none"
           >
             <option value="">-- Choose Borrower --</option>
             {people.map((p) => (
@@ -254,12 +254,12 @@ const ReceivePaymentModal = ({ isOpen, onClose, onSuccess, initialPersonId = nul
               value={selectedAccountId}
               onChange={(e) => setSelectedAccountId(e.target.value)}
               required
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+              className="w-full px-3 h-8  py-2 bg-slate-950 border border-slate-800 rounded-2xl text-white focus:border-blue-500 focus:outline-none"
             >
               <option value="">-- Choose Account --</option>
               {accounts.map((acc) => (
                 <option key={acc._id} value={acc._id}>
-                  {acc.accountNumber} - Outstanding: ₹{acc.outstanding?.toLocaleString()} ({acc.repaymentType.toUpperCase()})
+                  {acc.accountNumber} - Given: ₹{(acc.amountGiven || 0).toLocaleString()} ({acc.repaymentType?.toUpperCase()})
                 </option>
               ))}
             </select>
@@ -317,7 +317,7 @@ const ReceivePaymentModal = ({ isOpen, onClose, onSuccess, initialPersonId = nul
             <select
               value={paymentMethod}
               onChange={(e) => setPaymentMethod(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
+              className="w-full px-3 h-8 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white focus:border-blue-500 focus:outline-none"
             >
               <option value="upi">UPI (GPay / PhonePe / Paytm)</option>
               <option value="cash">Cash</option>
