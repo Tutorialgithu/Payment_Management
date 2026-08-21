@@ -90,7 +90,11 @@ const getPeople = async (req, res, next) => {
         let totalReceived = 0;
         let outstanding = 0;
         let overdue = 0;
+        let bounceAmount = 0;
         let activeAccountsCount = 0;
+
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 59, 59, 999);
 
         for (let acc of accounts) {
           totalGiven += Number(acc.amountGiven) || 0;
@@ -101,6 +105,23 @@ const getPeople = async (req, res, next) => {
           if (acc.status === 'overdue') {
             overdue += Number(acc.outstanding) || 0;
           }
+
+          if (acc.repaymentType === 'emi') {
+            const accEmis = await EMI.find({ accountId: acc._id });
+            const missedEmis = accEmis.filter((e) => {
+              const isOverdueStatus = e.status === 'overdue';
+              const isPastDue = e.dueDate && new Date(e.dueDate) <= endOfToday && Number(e.remainingAmount) > 0 && e.status !== 'paid';
+              return isOverdueStatus || isPastDue;
+            });
+            const accBounce = missedEmis.reduce((sum, e) => sum + (Number(e.remainingAmount) || Number(e.amount) || 0), 0);
+            bounceAmount += accBounce;
+          } else {
+            const isPastDue = acc.dueDate && new Date(acc.dueDate) <= endOfToday;
+            if (isPastDue && (Number(acc.outstanding) > 0)) {
+              bounceAmount += Number(acc.outstanding);
+            }
+          }
+
           if (acc.status === 'active' || acc.status === 'partial' || acc.status === 'overdue') {
             activeAccountsCount++;
           }
@@ -113,6 +134,7 @@ const getPeople = async (req, res, next) => {
           totalReceived,
           outstanding,
           overdue,
+          bounceAmount,
           activeAccountsCount,
           totalAccountsCount: accounts.length
         };

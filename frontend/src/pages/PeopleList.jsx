@@ -238,7 +238,7 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
                 <th className="p-4">Expected</th>
                 <th className="p-4">Received</th>
                 <th className="p-4">Outstanding</th>
-                <th className="p-4">Overdue</th>
+                <th className="p-4 text-rose-400">Bounce Amount</th>
                 <th className="p-4">Documents</th>
                 <th className="p-4">Status</th>
                 <th className="p-4 text-right">Actions</th>
@@ -283,8 +283,8 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
                   <td className="p-4 font-semibold text-slate-200">{symbol}{(person.expectedReturn || 0).toLocaleString()}</td>
                   <td className="p-4 font-bold text-emerald-400">{symbol}{(person.totalReceived || 0).toLocaleString()}</td>
                   <td className="p-4 font-bold text-rose-400">{symbol}{(person.outstanding || 0).toLocaleString()}</td>
-                  <td className="p-4 font-bold text-rose-500">
-                    {person.overdue > 0 ? `${symbol}${person.overdue.toLocaleString()}` : '-'}
+                  <td className="p-4 font-bold text-rose-500 font-mono">
+                    {(person.bounceAmount || person.overdue || 0) > 0 ? `${symbol}${(person.bounceAmount || person.overdue).toLocaleString()}` : '-'}
                   </td>
                   <td className="p-4">
                     <div className="flex items-center gap-1.5">
