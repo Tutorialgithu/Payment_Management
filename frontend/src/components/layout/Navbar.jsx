@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Menu, Search, Plus, Bell, User, LogOut, Shield } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import img from '../../assets/acgback2.png'
+
 
 const Navbar = ({ onToggleSidebar, onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) => {
   const { admin, logout } = useAuth();
@@ -88,9 +90,10 @@ const Navbar = ({ onToggleSidebar, onOpenReceivePayment, onOpenAddPerson, onOpen
               onClick={() => setShowProfileMenu(!showProfileMenu)}
               className="flex items-center gap-2 p-1 rounded-xl hover:bg-slate-800 transition"
             >
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-md">
+              {/* <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-xs shadow-md">
                 {admin?.name ? admin.name.charAt(0) : 'A'}
-              </div>
+              </div> */}
+              <img src={img} alt="logo" className='h-12 w-12' />
               <span className="hidden sm:inline-block text-xs font-semibold text-white">
                 {admin?.name || 'Admin'}
               </span>

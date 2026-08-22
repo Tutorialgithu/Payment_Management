@@ -16,6 +16,8 @@ import {
   Landmark
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import img from '../../assets/acgback.png'
+import img1 from '../../assets/acgback2.png'
 
 const Sidebar = ({ isOpen, onClose, onOpenReceivePayment, onOpenAddAccount, onOpenAddPerson }) => {
   const { admin, logout } = useAuth();
@@ -54,19 +56,20 @@ const Sidebar = ({ isOpen, onClose, onOpenReceivePayment, onOpenAddAccount, onOp
           }`}
       >
         {/* Brand Header */}
-        <div className="h-16 px-6 flex items-center justify-between border-b border-slate-800 bg-slate-900/50">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30">
-              <Landmark className="w-6 h-6" />
+        <div className="h-16 mt-4 px-6 flex justify-center items-center">
+          <div className="flex justify-center items-center gap-3">
+            <div className="p-2 w-40 rounded-xl">
+              {/* <Landmark classNme="w-6 h-6" /> */}
+              <img src={img} alt="Logo" />
             </div>
-            <div>
+            {/* <div>
               <h1 className="font-bold text-white tracking-wide text-sm leading-tight">
                 {admin?.businessName || 'Lending Tracker'}
               </h1>
               <span className="text-[10px] uppercase tracking-wider font-semibold text-blue-400">
                 Single Admin Portal
               </span>
-            </div>
+            </div> */}
           </div>
 
           <button
@@ -139,9 +142,10 @@ const Sidebar = ({ isOpen, onClose, onOpenReceivePayment, onOpenAddAccount, onOp
         <div className="p-4 border-t border-slate-800 bg-slate-950/60">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-md">
+              {/* <div className="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-md">
                 {admin?.name ? admin.name.charAt(0) : 'A'}
-              </div>
+              </div> */}
+              <img src={img1} alt="logo" className='h-12 w-12' />
               <div className="overflow-hidden">
                 <div className="text-xs font-bold text-white truncate">{admin?.name || 'Administrator'}</div>
                 <div className="text-[10px] text-slate-400 truncate">{admin?.email || 'admin@tracker.com'}</div>

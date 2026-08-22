@@ -48,6 +48,34 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const sendOtpAdmin = async (email = 'adarshchoudhary835@gmail.com') => {
+    console.log('[AuthContext]: Executing sendOtpAdmin POST /auth/send-otp for:', email);
+    try {
+      const data = await api.post('/auth/send-otp', { email });
+      return data;
+    } catch (err) {
+      console.error('[AuthContext]: sendOtpAdmin request error:', err);
+      throw err;
+    }
+  };
+
+  const verifyOtpAdmin = async (otp, email = 'adarshchoudhary835@gmail.com') => {
+    console.log('[AuthContext]: Executing verifyOtpAdmin POST /auth/verify-otp');
+    try {
+      const data = await api.post('/auth/verify-otp', { email, otp });
+      if (data && data.success) {
+        setToken(data.token);
+        setAdmin(data.admin);
+        localStorage.setItem('lending_admin_token', data.token);
+        localStorage.setItem('lending_admin_user', JSON.stringify(data.admin));
+      }
+      return data;
+    } catch (err) {
+      console.error('[AuthContext]: verifyOtpAdmin request error:', err);
+      throw err;
+    }
+  };
+
   const logout = async () => {
     try {
       if (token) await api.post('/auth/logout');
@@ -70,7 +98,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ admin, token, loading, loginAdmin, logout, updateAdminState }}>
+    <AuthContext.Provider value={{ admin, token, loading, loginAdmin, sendOtpAdmin, verifyOtpAdmin, logout, updateAdminState }}>
       {children}
     </AuthContext.Provider>
   );

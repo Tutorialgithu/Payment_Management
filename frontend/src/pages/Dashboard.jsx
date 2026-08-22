@@ -208,7 +208,7 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
         const id = n._id || n.id;
         if (id === noteId) {
           const newStatus = !n.isResolved;
-          api.put(`/notes/${id}`, { isResolved: newStatus }).catch(() => {});
+          api.put(`/notes/${id}`, { isResolved: newStatus }).catch(() => { });
           return { ...n, isResolved: newStatus };
         }
         return n;
@@ -496,7 +496,7 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold text-white tracking-wide">Highest Outstanding Borrowers</h2>
-            <button
+            < button
               onClick={() => navigate('/people')}
               className="text-xs font-semibold text-blue-400 hover:underline"
             >
@@ -714,13 +714,12 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
                 return (
                   <div
                     key={noteId}
-                    className={`p-3.5 rounded-2xl border transition flex items-start justify-between gap-3 ${
-                      isEditingThis
-                        ? 'bg-purple-950/30 border-purple-500/80 ring-1 ring-purple-500/50'
-                        : n.isResolved
+                    className={`p-3.5 rounded-2xl border transition flex items-start justify-between gap-3 ${isEditingThis
+                      ? 'bg-purple-950/30 border-purple-500/80 ring-1 ring-purple-500/50'
+                      : n.isResolved
                         ? 'bg-slate-950/40 border-slate-800/60 opacity-60'
                         : 'bg-slate-950 border-purple-500/30 hover:border-purple-500/60'
-                    }`}
+                      }`}
                   >
                     <div className="space-y-1.5 flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -768,11 +767,10 @@ const Dashboard = ({ onOpenReceivePayment, onOpenAddPerson, onOpenAddAccount }) 
                       <button
                         type="button"
                         onClick={() => handleStartEditNote(n)}
-                        className={`p-1 rounded-lg transition ${
-                          isEditingThis
-                            ? 'text-purple-400 bg-purple-500/20'
-                            : 'text-slate-500 hover:text-purple-400 hover:bg-slate-900'
-                        }`}
+                        className={`p-1 rounded-lg transition ${isEditingThis
+                          ? 'text-purple-400 bg-purple-500/20'
+                          : 'text-slate-500 hover:text-purple-400 hover:bg-slate-900'
+                          }`}
                         title="Edit Note"
                       >
                         <Edit3 className="w-3.5 h-3.5" />

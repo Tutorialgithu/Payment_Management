@@ -22,37 +22,44 @@ const ensureDefaultAdmin = async (shouldExit = false) => {
       }
     }
 
-    const adminCount = await Admin.countDocuments({});
-    if (adminCount === 0) {
-      const email = process.env.ADMIN_EMAIL || 'admin@lendingtracker.com';
-      const password = process.env.ADMIN_PASSWORD || 'admin123';
+    const email = (process.env.ADMIN_EMAIL || 'adarshchoudhary835@gmail.com').toLowerCase();
+    const password = process.env.ADMIN_PASSWORD || 'admin123';
+    
+    let admin = await Admin.findOne({ email });
+    if (!admin) {
       const passwordHash = await Admin.hashPassword(password);
-
-      await Admin.create({
-        name: 'Super Admin',
-        email: email.toLowerCase(),
-        mobile: '9876543210',
-        passwordHash,
-        businessName: 'Lending Tracker Admin',
-        businessAddress: '',
-        businessPhone: '',
-        currencySymbol: '₹',
-        receiptPrefix: 'REC-',
-        notificationSettings: {
-          sendPaymentReceived: true,
-          sendEmiReminder: true,
-          sendDueReminder: true,
-          sendOverdueReminder: true,
-          sendAccountCompleted: true,
-          reminderDaysBefore: 3,
-          whatsappEnabled: true,
-          smsEnabled: true
-        }
-      });
-
-      console.log(`[Admin Initialization]: Default admin account created -> Email: ${email}`);
+      // Check if any old admin exists and update email, or create new
+      const oldAdmin = await Admin.findOne();
+      if (oldAdmin) {
+        oldAdmin.email = email;
+        await oldAdmin.save();
+        console.log(`[Admin Initialization]: Updated existing admin email to ${email}`);
+      } else {
+        await Admin.create({
+          name: 'Super Admin',
+          email,
+          mobile: '9876543210',
+          passwordHash,
+          businessName: 'Lending Tracker Admin',
+          businessAddress: '',
+          businessPhone: '',
+          currencySymbol: '₹',
+          receiptPrefix: 'REC-',
+          notificationSettings: {
+            sendPaymentReceived: true,
+            sendEmiReminder: true,
+            sendDueReminder: true,
+            sendOverdueReminder: true,
+            sendAccountCompleted: true,
+            reminderDaysBefore: 3,
+            whatsappEnabled: true,
+            smsEnabled: true
+          }
+        });
+        console.log(`[Admin Initialization]: Default admin account created -> Email: ${email}`);
+      }
     } else {
-      console.log('[Admin Initialization]: Admin account already exists in database.');
+      console.log(`[Admin Initialization]: Admin account (${email}) already exists in database.`);
     }
 
     if (shouldExit) {

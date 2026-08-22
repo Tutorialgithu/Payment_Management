@@ -64,6 +64,14 @@ const AdminSchema = new mongoose.Schema(
       smsEnabled: { type: Boolean, default: false },
       whatsappApiKey: { type: String, default: '' },
       smsApiKey: { type: String, default: '' }
+    },
+    otpCode: {
+      type: String,
+      default: null
+    },
+    otpExpiresAt: {
+      type: Date,
+      default: null
     }
   },
   { timestamps: true }
