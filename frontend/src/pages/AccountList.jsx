@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, Wallet, Eye, Trash2, CreditCard, Edit2 } from 'lucide-react';
+import { Search, Plus, Wallet, Eye, Trash2, CreditCard, Edit2, MinusCircle, RotateCcw } from 'lucide-react';
 import Badge from '../components/common/Badge';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -44,12 +44,34 @@ const AccountList = ({ onOpenReceivePaymentForAccount }) => {
   }, [search, status, repaymentType, page]);
 
   const handleCancelAccount = async (id, num) => {
-    if (window.confirm(`Are you sure you want to cancel account ${num}?`)) {
+    if (window.confirm(`Move account ${num} to Archive / Cancelled?`)) {
       try {
         await api.delete(`/accounts/${id}`);
         fetchAccounts();
       } catch (err) {
-        alert(err.message || 'Failed to cancel account');
+        alert(err.message || 'Failed to archive account');
+      }
+    }
+  };
+
+  const handleRestoreAccount = async (id, num) => {
+    if (window.confirm(`Restore account ${num} back to Active?`)) {
+      try {
+        await api.delete(`/accounts/${id}?restore=true`);
+        fetchAccounts();
+      } catch (err) {
+        alert(err.message || 'Failed to restore account');
+      }
+    }
+  };
+
+  const handlePermanentDeleteAccount = async (id, num) => {
+    if (window.confirm(`Are you sure you want to PERMANENTLY delete account ${num}? This action cannot be undone.`)) {
+      try {
+        await api.delete(`/accounts/${id}?permanent=true`);
+        fetchAccounts();
+      } catch (err) {
+        alert(err.message || 'Failed to delete account permanently');
       }
     }
   };
@@ -174,13 +196,33 @@ const AccountList = ({ onOpenReceivePaymentForAccount }) => {
                         <CreditCard className="w-4 h-4" />
                       </button>
 
-                      <button
-                        onClick={() => handleCancelAccount(acc._id, acc.accountNumber)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
-                        title="Cancel Account"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {acc.status !== 'cancelled' ? (
+                        <button
+                          onClick={() => handleCancelAccount(acc._id, acc.accountNumber)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition"
+                          title="Archive / Cancel Account"
+                        >
+                          <MinusCircle className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleRestoreAccount(acc._id, acc.accountNumber)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition"
+                            title="Restore Account"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            onClick={() => handlePermanentDeleteAccount(acc._id, acc.accountNumber)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
+                            title="Delete Account Permanently"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>

@@ -35,22 +35,21 @@ const ReceivePaymentModal = ({ isOpen, onClose, onSuccess, initialPersonId = nul
       setSelectedPersonId(pId);
       setSelectedAccountId(aId);
 
-      api.get('/people?limit=500').then((res) => {
-        if (res.success) {
-          let fetchedPeople = res.people || [];
-          if (pId && !fetchedPeople.some((p) => String(p._id) === pId)) {
-            api.get(`/people/${pId}`).then((pRes) => {
-              if (pRes.success && pRes.person) {
-                setPeople([pRes.person, ...fetchedPeople]);
-              } else {
-                setPeople(fetchedPeople);
-              }
-            });
+      if (pId) {
+        api.get(`/people/${pId}`).then((pRes) => {
+          if (pRes.success && pRes.person) {
+            setPeople([pRes.person]);
           } else {
-            setPeople(fetchedPeople);
+            api.get('/people?limit=500').then((res) => {
+              if (res.success) setPeople(res.people || []);
+            });
           }
-        }
-      });
+        });
+      } else {
+        api.get('/people?limit=500').then((res) => {
+          if (res.success) setPeople(res.people || []);
+        });
+      }
     }
   }, [isOpen, initialPersonId, initialAccountId]);
 
@@ -235,9 +234,10 @@ const ReceivePaymentModal = ({ isOpen, onClose, onSuccess, initialPersonId = nul
               setSelectedAccountId('');
             }}
             required
-            className="w-full px-3 h-8 py-2 bg-slate-950 border border-slate-800 rounded-2xl text-white focus:border-blue-500 focus:outline-none"
+            disabled={Boolean(initialPersonId)}
+            className="w-full px-3 h-8 py-2 bg-slate-950 border border-slate-800 rounded-2xl text-white focus:border-blue-500 focus:outline-none disabled:opacity-80 disabled:cursor-not-allowed font-semibold"
           >
-            <option value="">-- Choose Borrower --</option>
+            {!initialPersonId && <option value="">-- Choose Borrower --</option>}
             {people.map((p) => (
               <option key={p._id} value={p._id}>
                 {p.name} ({p.mobile})

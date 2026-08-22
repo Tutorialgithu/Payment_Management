@@ -234,7 +234,7 @@ const updateAccount = async (req, res, next) => {
   }
 };
 
-// @desc    Soft Delete Account
+// @desc    Delete / Cancel / Restore Account
 // @route   DELETE /api/accounts/:id
 // @access  Private
 const deleteAccount = async (req, res, next) => {
@@ -242,6 +242,48 @@ const deleteAccount = async (req, res, next) => {
     const account = await Account.findById(req.params.id);
     if (!account) {
       return res.status(404).json({ success: false, message: 'Account not found' });
+    }
+
+    const { permanent, restore } = req.query;
+
+    if (restore === 'true') {
+      account.isSoftDeleted = false;
+      if (account.outstanding <= 0) {
+        account.status = 'completed';
+      } else if (account.totalReceived > 0) {
+        account.status = 'partial';
+      } else {
+        account.status = 'active';
+      }
+      await account.save();
+
+      await logAudit({
+        adminId: req.admin._id,
+        action: 'ACCOUNT_RESTORED',
+        entityType: 'Account',
+        entityId: account._id,
+        description: `Restored account ${account.accountNumber}`,
+        req
+      });
+
+      return res.json({ success: true, message: 'Account restored successfully', account });
+    }
+
+    if (permanent === 'true' || account.status === 'cancelled' || account.isSoftDeleted) {
+      await EMI.deleteMany({ accountId: account._id });
+      await Payment.deleteMany({ accountId: account._id });
+      await Account.findByIdAndDelete(account._id);
+
+      await logAudit({
+        adminId: req.admin._id,
+        action: 'ACCOUNT_DELETED_PERMANENTLY',
+        entityType: 'Account',
+        entityId: account._id,
+        description: `Permanently deleted account ${account.accountNumber}`,
+        req
+      });
+
+      return res.json({ success: true, message: 'Account permanently deleted successfully' });
     }
 
     account.isSoftDeleted = true;

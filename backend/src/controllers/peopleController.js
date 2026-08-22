@@ -371,7 +371,7 @@ const updatePerson = async (req, res, next) => {
   }
 };
 
-// @desc    Archive / Soft Delete Person
+// @desc    Delete / Archive Person
 // @route   DELETE /api/people/:id
 // @access  Private
 const deletePerson = async (req, res, next) => {
@@ -379,6 +379,41 @@ const deletePerson = async (req, res, next) => {
     const person = await Person.findById(req.params.id);
     if (!person) {
       return res.status(404).json({ success: false, message: 'Person not found' });
+    }
+
+    const { permanent, restore } = req.query;
+
+    if (restore === 'true') {
+      person.status = 'active';
+      await person.save();
+      await logAudit({
+        adminId: req.admin._id,
+        action: 'PERSON_RESTORED',
+        entityType: 'Person',
+        entityId: person._id,
+        description: `Restored person record to active: ${person.name}`,
+        req
+      });
+      return res.json({ success: true, message: 'Person restored to active successfully', person });
+    }
+
+    if (permanent === 'true' || person.status === 'archived') {
+      // Permanent Delete: Delete person and related accounts, payments, EMIs
+      await Account.deleteMany({ personId: person._id });
+      await EMI.deleteMany({ personId: person._id });
+      await Payment.deleteMany({ personId: person._id });
+      await Person.findByIdAndDelete(person._id);
+
+      await logAudit({
+        adminId: req.admin._id,
+        action: 'PERSON_DELETED_PERMANENTLY',
+        entityType: 'Person',
+        entityId: person._id,
+        description: `Permanently deleted person record: ${person.name}`,
+        req
+      });
+
+      return res.json({ success: true, message: 'Person permanently deleted successfully' });
     }
 
     person.status = 'archived';

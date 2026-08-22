@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, Plus, UserCheck, Eye, Edit, Trash2, Send, CreditCard, Wallet, Camera, FileText, Image as ImageIcon, Loader2, X, Check } from 'lucide-react';
+import { Search, Plus, UserCheck, Eye, Edit, Trash2, Send, CreditCard, Wallet, Camera, FileText, Image as ImageIcon, Loader2, X, Check, MinusCircle, RotateCcw } from 'lucide-react';
 import Badge from '../components/common/Badge';
 import Modal from '../components/common/Modal';
 import api from '../services/api';
@@ -169,12 +169,34 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
   };
 
   const handleArchive = async (id, name) => {
-    if (window.confirm(`Are you sure you want to archive ${name}?`)) {
+    if (window.confirm(`Are you sure you want to move ${name} to Archive?`)) {
       try {
         await api.delete(`/people/${id}`);
         fetchPeople();
       } catch (err) {
         alert(err.message || 'Failed to archive person');
+      }
+    }
+  };
+
+  const handleRestore = async (id, name) => {
+    if (window.confirm(`Restore ${name} back to Active Borrowers?`)) {
+      try {
+        await api.delete(`/people/${id}?restore=true`);
+        fetchPeople();
+      } catch (err) {
+        alert(err.message || 'Failed to restore person');
+      }
+    }
+  };
+
+  const handlePermanentDelete = async (id, name) => {
+    if (window.confirm(`Are you sure you want to PERMANENTLY delete ${name}? This action cannot be undone.`)) {
+      try {
+        await api.delete(`/people/${id}?permanent=true`);
+        fetchPeople();
+      } catch (err) {
+        alert(err.message || 'Failed to delete person permanently');
       }
     }
   };
@@ -350,13 +372,33 @@ const PeopleList = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson }
                         <Edit className="w-4 h-4" />
                       </button>
 
-                      <button
-                        onClick={() => handleArchive(person._id, person.name)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
-                        title="Archive Person"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {person.status === 'active' ? (
+                        <button
+                          onClick={() => handleArchive(person._id, person.name)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition"
+                          title="Archive Borrower (Move to Archive)"
+                        >
+                          <MinusCircle className="w-4 h-4" />
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleRestore(person._id, person.name)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition"
+                            title="Restore Borrower to Active"
+                          >
+                            <RotateCcw className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            onClick={() => handlePermanentDelete(person._id, person.name)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-800 transition"
+                            title="Delete Borrower Permanently"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
