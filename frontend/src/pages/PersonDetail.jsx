@@ -28,6 +28,7 @@ import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { compressImageFile } from '../utils/imageReducer';
 import { getImageUrl } from '../utils/imageHelper';
+import EditAccountModal from './EditAccountModal';
 
 const parseLocalDate = (dateVal) => {
   if (!dateVal) return new Date();
@@ -132,8 +133,22 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
 
   const [editingPaymentId, setEditingPaymentId] = useState(null);
   const [editAmount, setEditAmount] = useState('');
+  const [editDate, setEditDate] = useState('');
   const [updatingPayment, setUpdatingPayment] = useState(false);
   const [editError, setEditError] = useState('');
+
+  const [editingAccount, setEditingAccount] = useState(null);
+  const [isAccountEditModalOpen, setIsAccountEditModalOpen] = useState(false);
+
+  const formatDateForInput = (d) => {
+    if (!d) return '';
+    const date = new Date(d);
+    if (isNaN(date.getTime())) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   const handleOpenEditProfile = () => {
     if (!personData?.person) return;
@@ -220,6 +235,10 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
       setEditError('Enter a valid non-negative amount');
       return;
     }
+    if (!editDate) {
+      setEditError('Please select a valid date');
+      return;
+    }
 
     setUpdatingPayment(true);
     setEditError('');
@@ -228,7 +247,7 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
     setPersonData((prev) => {
       if (!prev) return prev;
       const updatedPayments = (prev.payments || []).map((p) =>
-        p._id === paymentId ? { ...p, amount: newAmountNum } : p
+        p._id === paymentId ? { ...p, amount: newAmountNum, paymentDate: editDate } : p
       );
       return {
         ...prev,
@@ -239,9 +258,13 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
     setEditingPaymentId(null);
 
     try {
-      const res = await api.put(`/payments/${paymentId}`, { amount: newAmountNum });
+      const res = await api.put(`/payments/${paymentId}`, {
+        amount: newAmountNum,
+        paymentDate: editDate
+      });
       if (res.success) {
         setEditAmount('');
+        setEditDate('');
         // Silent background sync without triggering full page loading screen
         await fetchPersonProfile(false);
       } else {
@@ -712,6 +735,18 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
 
                           <div className="flex items-center gap-2">
                             <button
+                              onClick={() => {
+                                setEditingAccount(acc);
+                                setIsAccountEditModalOpen(true);
+                              }}
+                              className="px-2.5 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600 text-blue-400 hover:text-white border border-blue-500/30 font-bold text-xs transition flex items-center gap-1"
+                              title="Edit Loan Account Details"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                              <span>Edit Account</span>
+                            </button>
+
+                            <button
                               onClick={() => onOpenReceivePaymentForPerson?.(person._id, acc._id)}
                               className="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/30 font-bold text-xs transition flex items-center gap-1"
                               title="Receive Payment for this Loan"
@@ -810,7 +845,16 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                                             {p.receiptNumber || 'N/A'}
                                           </td>
                                           <td className="p-2 text-slate-200 font-medium">
-                                            {p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : 'N/A'}
+                                            {editingPaymentId === p._id ? (
+                                              <input
+                                                type="date"
+                                                value={editDate}
+                                                onChange={(e) => setEditDate(e.target.value)}
+                                                className="bg-slate-950 border border-blue-500 rounded px-2 py-1 text-white text-xs font-medium focus:outline-none"
+                                              />
+                                            ) : (
+                                              p.paymentDate ? new Date(p.paymentDate).toLocaleDateString() : 'N/A'
+                                            )}
                                           </td>
                                           <td className="p-2 text-slate-400 uppercase font-medium text-[11px]">
                                             {p.paymentMethod || 'cash'} {p.transactionId ? `(${p.transactionId})` : ''}
@@ -840,7 +884,7 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                                                   disabled={updatingPayment}
                                                   onClick={() => handleUpdatePayment(p._id)}
                                                   className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50 flex items-center justify-center"
-                                                  title="Save Amount"
+                                                  title="Save Changes"
                                                 >
                                                   {updatingPayment ? (
                                                     <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
@@ -852,6 +896,8 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                                                   disabled={updatingPayment}
                                                   onClick={() => {
                                                     setEditingPaymentId(null);
+                                                    setEditAmount('');
+                                                    setEditDate('');
                                                     setEditError('');
                                                   }}
                                                   className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
@@ -865,10 +911,11 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
                                                 onClick={() => {
                                                   setEditingPaymentId(p._id);
                                                   setEditAmount(p.amount);
+                                                  setEditDate(formatDateForInput(p.paymentDate));
                                                   setEditError('');
                                                 }}
                                                 className="p-1.5 rounded-lg bg-slate-800 hover:bg-blue-600/20 text-slate-400 hover:text-blue-400 transition"
-                                                title="Edit Received Amount"
+                                                title="Edit Payment Record"
                                               >
                                                 <Edit2 className="w-3.5 h-3.5" />
                                               </button>
@@ -1525,6 +1572,13 @@ const PersonDetail = ({ onOpenReceivePaymentForPerson, onOpenAddAccountForPerson
             </div>
           </Modal>
         )}
+        {/* Edit Loan Account Modal */}
+        <EditAccountModal
+          isOpen={isAccountEditModalOpen}
+          onClose={() => setIsAccountEditModalOpen(false)}
+          account={editingAccount}
+          onSuccess={() => fetchPersonProfile(false)}
+        />
       </div>
     </div>
   );

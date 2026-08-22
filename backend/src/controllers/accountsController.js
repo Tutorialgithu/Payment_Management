@@ -179,12 +179,43 @@ const updateAccount = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Account not found' });
     }
 
-    const { purpose, notes, dueDate, status } = req.body;
+    const {
+      amountGiven,
+      expectedReturn,
+      dateGiven,
+      dueDate,
+      purpose,
+      repaymentType,
+      notes,
+      status
+    } = req.body;
 
     if (purpose !== undefined) account.purpose = purpose;
     if (notes !== undefined) account.notes = notes;
-    if (dueDate !== undefined) account.dueDate = dueDate;
-    if (status !== undefined) account.status = status;
+    if (dateGiven) account.dateGiven = dateGiven;
+    if (dueDate) account.dueDate = dueDate;
+    if (repaymentType && ['one-time', 'emi'].includes(repaymentType)) {
+      account.repaymentType = repaymentType;
+    }
+
+    if (amountGiven !== undefined && !isNaN(Number(amountGiven)) && Number(amountGiven) >= 0) {
+      account.amountGiven = Number(amountGiven);
+    }
+
+    if (expectedReturn !== undefined && !isNaN(Number(expectedReturn)) && Number(expectedReturn) >= 0) {
+      account.expectedReturn = Number(expectedReturn);
+    }
+
+    account.interestAmount = Math.max(0, (account.expectedReturn || 0) - (account.amountGiven || 0));
+    account.outstanding = Math.max(0, Math.round(((account.expectedReturn || 0) - (account.totalReceived || 0)) * 100) / 100);
+
+    if (account.outstanding <= 0) {
+      account.status = 'completed';
+    } else if (account.totalReceived > 0) {
+      account.status = 'partial';
+    } else if (status !== undefined) {
+      account.status = status;
+    }
 
     await account.save();
 

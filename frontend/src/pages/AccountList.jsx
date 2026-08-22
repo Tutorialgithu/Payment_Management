@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, Wallet, Eye, Trash2, CreditCard } from 'lucide-react';
+import { Search, Plus, Wallet, Eye, Trash2, CreditCard, Edit2 } from 'lucide-react';
 import Badge from '../components/common/Badge';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import EditAccountModal from './EditAccountModal';
 
 const AccountList = ({ onOpenReceivePaymentForAccount }) => {
   const navigate = useNavigate();
@@ -17,6 +18,9 @@ const AccountList = ({ onOpenReceivePaymentForAccount }) => {
   const [repaymentType, setRepaymentType] = useState('all');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+
+  const [editingAccount, setEditingAccount] = useState(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const fetchAccounts = async () => {
     setLoading(true);
@@ -145,12 +149,23 @@ const AccountList = ({ onOpenReceivePaymentForAccount }) => {
                   <td className="p-4 font-semibold">{symbol}{acc.expectedReturn?.toLocaleString()}</td>
                   <td className="p-4 font-bold text-emerald-400">{symbol}{acc.totalReceived?.toLocaleString()}</td>
                   <td className="p-4 font-bold text-rose-400">{symbol}{acc.outstanding?.toLocaleString()}</td>
-                  <td className="p-4 text-slate-400">{new Date(acc.dueDate).toLocaleDateString('en-IN')}</td>
+                  <td className="p-4 text-slate-400">{acc.dueDate ? new Date(acc.dueDate).toLocaleDateString('en-IN') : 'N/A'}</td>
                   <td className="p-4">
                     <Badge status={acc.status} />
                   </td>
                   <td className="p-4 text-right">
                     <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        onClick={() => {
+                          setEditingAccount(acc);
+                          setIsEditModalOpen(true);
+                        }}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-blue-400 hover:bg-slate-800 transition"
+                        title="Edit Account"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+
                       <button
                         onClick={() => onOpenReceivePaymentForAccount?.(acc.personId?._id, acc._id)}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition"
@@ -182,6 +197,14 @@ const AccountList = ({ onOpenReceivePaymentForAccount }) => {
           </table>
         </div>
       </div>
+
+      {/* Edit Account Modal */}
+      <EditAccountModal
+        isOpen={isEditModalOpen}
+        onClose={() => setIsEditModalOpen(false)}
+        account={editingAccount}
+        onSuccess={() => fetchAccounts()}
+      />
     </div>
   );
 };
