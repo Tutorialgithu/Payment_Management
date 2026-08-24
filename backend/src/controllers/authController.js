@@ -121,7 +121,7 @@ const forgotPassword = async (req, res, next) => {
   try {
     const { email } = req.body;
     const admin = await Admin.findOne({ email: email?.toLowerCase() });
-    
+
     // Always return clean status to prevent enumeration
     res.json({
       success: true,
@@ -159,7 +159,7 @@ const sendEmailOtp = async (toEmail, otp) => {
         html: `
           <div style="font-family: Arial, sans-serif; padding: 24px; background-color: #0f172a; color: #ffffff; border-radius: 12px; max-width: 500px; margin: 0 auto; border: 1px solid #1e293b;">
             <h2 style="color: #3b82f6; text-align: center; margin-top: 0;">Payment Management Admin</h2>
-            <p style="font-size: 14px; color: #94a3b8; line-height: 1.5;">Use the 6-digit OTP code below to sign in to your Admin Dashboard. This OTP is valid for 10 minutes.</p>
+            <p style="font-size: 14px; color: #94a3b8; line-height: 1.5;">Use the 4-digit OTP code below to sign in to your Admin Dashboard. This OTP is valid for 10 minutes.</p>
             <div style="background-color: #1e293b; border: 1px solid #334155; border-radius: 10px; text-align: center; padding: 18px; margin: 24px 0;">
               <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #10b981;">${otp}</span>
             </div>
@@ -201,7 +201,7 @@ const sendOtp = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Admin account not found' });
     }
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
     const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     admin.otpCode = otp;
@@ -220,16 +220,14 @@ const sendOtp = async (req, res, next) => {
   }
 };
 
-// @desc    Verify OTP and login
-// @route   POST /api/auth/verify-otp
-// @access  Public
+
 const verifyOtp = async (req, res, next) => {
   try {
     const { otp } = req.body;
     const email = (req.body.email || process.env.ADMIN_EMAIL || 'adarshchoudhary835@gmail.com').toLowerCase().trim();
 
     if (!otp) {
-      return res.status(400).json({ success: false, message: 'Please enter the 6-digit OTP code' });
+      return res.status(400).json({ success: false, message: 'Please enter the 4-digit OTP code' });
     }
 
     let admin = await Admin.findOne({ email });
@@ -288,6 +286,7 @@ const verifyOtp = async (req, res, next) => {
 // @desc    Logout Admin
 // @route   POST /api/auth/logout
 // @access  Private
+
 const logout = async (req, res, next) => {
   try {
     await logAudit({

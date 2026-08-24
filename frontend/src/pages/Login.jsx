@@ -189,11 +189,10 @@ const Login = () => {
                 type="button"
                 disabled={resendTimer > 0 || loading}
                 onClick={handleSendOtp}
-                className={`flex items-center gap-1.5 font-semibold ${
-                  resendTimer > 0 || loading
-                    ? 'text-slate-600 cursor-not-allowed'
-                    : 'text-blue-400 hover:underline'
-                }`}
+                className={`flex items-center gap-1.5 font-semibold ${resendTimer > 0 || loading
+                  ? 'text-slate-600 cursor-not-allowed'
+                  : 'text-blue-400 hover:underline'
+                  }`}
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
                 <span>
